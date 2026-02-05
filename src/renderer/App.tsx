@@ -4,11 +4,11 @@
  * @module renderer/App
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useWorkspaceStore, useGitStore, useThreadStore } from './stores';
 import { useInitApp } from './hooks/useInitApp';
-import { WelcomePage, FileList } from './components';
+import { WelcomePage, FileList, SplashScreen } from './components';
 import {
   NewThreadIcon,
   AutomationsIcon,
@@ -81,9 +81,15 @@ export default function App() {
   const { summary: gitSummary, files: gitFiles } = useGitStore();
   const { threads, activeId: activeThread, setActive: setActiveThread, createThread } = useThreadStore();
 
+  const [showSplash, setShowSplash] = useState(true);
   const [activeNav, setActiveNav] = useState('new-thread');
   const [changesView, setChangesView] = useState<'unstaged' | 'staged'>('staged');
   const [composerValue, setComposerValue] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSplash(false), 700);
+    return () => clearTimeout(timer);
+  }, []);
 
   const stagedFiles = useMemo(
     () => gitFiles.filter((f) => f.staged),
@@ -98,6 +104,10 @@ export default function App() {
   const emptyTitle = changesView === 'staged' ? 'No staged changes' : 'No unstaged changes';
   const emptySubtitle =
     changesView === 'staged' ? 'Accept edits to stage them' : 'Working tree is clean';
+
+  if (showSplash) {
+    return <SplashScreen />;
+  }
 
   if (!workspace) {
     return <WelcomePage recentWorkspaces={workspaces} />;

@@ -18,6 +18,47 @@
   --topbar-height: 56px;
 }
 
+/* Splash Screen */
+@keyframes splash-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes splash-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--shell-bg);
+  z-index: 9999;
+  animation: splash-in 300ms ease-out forwards, splash-out 300ms ease-in 400ms forwards;
+}
+
+.splash-logo {
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
 * {
   box-sizing: border-box;
 }

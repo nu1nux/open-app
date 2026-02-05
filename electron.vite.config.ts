@@ -8,7 +8,8 @@ export default defineConfig({
       outDir: 'dist/main',
       sourcemap: true,
       rollupOptions: {
-        input: path.resolve(__dirname, 'src/main/index.ts')
+        input: path.resolve(__dirname, 'src/main/index.ts'),
+        external: ['fsevents', 'chokidar']
       }
     }
   },
