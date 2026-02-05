@@ -1,0 +1,23 @@
+{
+  "name": "@open/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "concurrently -k -n renderer,build,electron \"pnpm -C renderer dev\" \"node scripts/build.mjs --watch\" \"node scripts/launch.mjs\"",
+    "build": "pnpm -C renderer build && node scripts/build.mjs",
+    "start": "electron .",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && pnpm -C renderer typecheck"
+  },
+  "dependencies": {
+    "electron": "^30.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "chokidar": "^3.6.0",
+    "concurrently": "^8.2.2",
+    "esbuild": "^0.20.2",
+    "typescript": "^5.5.4",
+    "wait-on": "^7.2.0"
+  }
+}

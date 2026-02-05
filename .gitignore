@@ -1,0 +1,7 @@
+node_modules
+.pnpm-store
+.DS_Store
+apps/desktop/dist
+apps/desktop/renderer/dist
+apps/desktop/renderer/.vite
+*.log
