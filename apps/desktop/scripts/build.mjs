@@ -12,7 +12,7 @@ const shared = {
   sourcemap: true,
   platform: 'node',
   target: 'node18',
-  external: ['electron'],
+  external: ['electron', '*.node'],
 };
 
 const mainConfig = {

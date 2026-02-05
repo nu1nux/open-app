@@ -13,7 +13,9 @@ import { initIntegrations } from './integrations';
 import { initProviders } from './providers';
 import { initStorage } from './storage';
 
-const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
+const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
+const fallbackDevServerUrl = 'http://127.0.0.1:5173';
+const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
@@ -30,10 +32,11 @@ function createWindow() {
   });
 
   if (isDev) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL as string);
+    const url = devServerUrl ?? fallbackDevServerUrl;
+    mainWindow.loadURL(url);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    const indexHtml = path.join(__dirname, '../../renderer/dist/index.html');
+    const indexHtml = path.join(__dirname, '../renderer/index.html');
     mainWindow.loadFile(indexHtml);
   }
 

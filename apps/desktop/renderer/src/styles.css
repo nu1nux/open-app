@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   color: #1b1b1b;
