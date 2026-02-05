@@ -1,5 +1,16 @@
+/**
+ * @fileoverview Workspace type definitions shared across the application.
+ * @module shared/workspace
+ */
+
+/**
+ * Unique identifier for a workspace.
+ */
 export type WorkspaceId = string;
 
+/**
+ * Specification for creating a new workspace.
+ */
 export interface WorkspaceSpec {
   repoRoot: string;
   baseBranch?: string;
@@ -7,6 +18,9 @@ export interface WorkspaceSpec {
   visibleDirs?: string[];
 }
 
+/**
+ * Represents a workspace with its git worktree configuration.
+ */
 export interface Workspace {
   id: WorkspaceId;
   repoRoot: string;

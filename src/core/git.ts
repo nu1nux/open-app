@@ -1,5 +1,15 @@
+/**
+ * @fileoverview Git adapter for interacting with git repositories.
+ * Provides an abstraction layer over simple-git for worktree,
+ * status, and diff operations.
+ * @module core/git
+ */
+
 import simpleGit, { type SimpleGit } from "simple-git";
 
+/**
+ * Interface for git operations used by the application.
+ */
 export interface GitAdapter {
   createWorktree(repoRoot: string, path: string, branch: string, baseBranch: string): Promise<void>;
   removeWorktree(repoRoot: string, path: string): Promise<void>;
@@ -7,6 +17,10 @@ export interface GitAdapter {
   diff(repoRoot: string): Promise<string>;
 }
 
+/**
+ * Creates a new git adapter instance.
+ * @returns {GitAdapter} A git adapter with methods for worktree, status, and diff operations
+ */
 export function createGitAdapter(): GitAdapter {
   const git = (dir: string): SimpleGit => simpleGit({ baseDir: dir });
 

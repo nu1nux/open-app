@@ -1,3 +1,10 @@
+/**
+ * @fileoverview IPC handler registration for main process communication.
+ * Registers all IPC channels for workspace, git, and diff operations,
+ * and broadcasts events to all renderer windows.
+ * @module main/ipc
+ */
+
 import { BrowserWindow, ipcMain } from 'electron';
 import {
   addWorkspace,
@@ -18,14 +25,25 @@ import { getDiff, getDiffForFile } from '../diff';
 import { emitAppEvent, onAppEvent, type AppEvent } from '../events';
 import { startWatchers, stopWatchers } from '../watchers';
 
+/** Flag to track if event listeners have been bound */
 let eventsBound = false;
 
+/**
+ * Broadcasts an event to all open browser windows.
+ * @param {AppEvent} event - The event name to broadcast
+ */
 function broadcast(event: AppEvent) {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(event);
   }
 }
 
+/**
+ * Refreshes file system watchers based on the current workspace.
+ * Stops existing watchers if no workspace is selected, or starts
+ * new watchers for the current workspace path.
+ * @returns {Promise<void>}
+ */
 async function refreshWatchers() {
   const current = await getCurrentWorkspace();
   if (!current) {
@@ -35,6 +53,11 @@ async function refreshWatchers() {
   await startWatchers(current.path);
 }
 
+/**
+ * Registers all IPC handlers for the main process.
+ * Sets up handlers for workspace, git, and diff operations.
+ * Also binds event listeners to broadcast changes to renderer windows.
+ */
 export function registerIpc() {
   if (!eventsBound) {
     eventsBound = true;

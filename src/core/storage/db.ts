@@ -1,5 +1,17 @@
+/**
+ * @fileoverview SQLite database initialization and connection.
+ * Creates and configures the application database with required tables.
+ * @module core/storage/db
+ */
+
 import Database from "better-sqlite3";
 
+/**
+ * Opens or creates a SQLite database at the specified path.
+ * Initializes the workspaces table if it doesn't exist.
+ * @param {string} path - File path for the database
+ * @returns {Database.Database} The database connection
+ */
 export function openDb(path: string): Database.Database {
   const db = new Database(path);
   db.exec(`

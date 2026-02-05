@@ -1,9 +1,20 @@
+/**
+ * @fileoverview Git integration module for the main process.
+ * Provides functions to interact with git repositories including
+ * getting status, summaries, and file change information.
+ * @module main/git
+ */
+
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getCurrentWorkspacePath } from '../workspace';
 
+/** Promisified version of execFile for async git commands */
 const execFileAsync = promisify(execFile);
 
+/**
+ * Summary information about a git repository.
+ */
 export type GitSummary = {
   available: boolean;
   reason?: string;
@@ -13,6 +24,9 @@ export type GitSummary = {
   lastCommit?: string;
 };
 
+/**
+ * Status information for a single file in the git repository.
+ */
 export type GitFileStatus = {
   path: string;
   staged: boolean;
@@ -20,6 +34,12 @@ export type GitFileStatus = {
   status: string;
 };
 
+/**
+ * Executes a git command in the specified directory.
+ * @param {string[]} args - Arguments to pass to the git command
+ * @param {string} cwd - Working directory for the git command
+ * @returns {Promise<{ok: boolean, stdout: string, error?: string}>} Result of the git command
+ */
 async function runGit(args: string[], cwd: string) {
   try {
     const { stdout } = await execFileAsync('git', args, { cwd });
@@ -33,10 +53,19 @@ async function runGit(args: string[], cwd: string) {
   }
 }
 
+/**
+ * Initializes the git module.
+ * Placeholder for future git module bootstrapping.
+ */
 export function initGit() {
   // Placeholder for future git module bootstrapping.
 }
 
+/**
+ * Gets a summary of the current git repository state.
+ * Includes branch name, status, root path, and last commit information.
+ * @returns {Promise<GitSummary>} Git repository summary
+ */
 export async function getGitSummary(): Promise<GitSummary> {
   const cwd = await getCurrentWorkspacePath();
   if (!cwd) {
@@ -65,6 +94,10 @@ export async function getGitSummary(): Promise<GitSummary> {
   };
 }
 
+/**
+ * Gets the git status for the current workspace.
+ * @returns {Promise<GitSummary>} Git status information
+ */
 export async function getGitStatus() {
   const summary = await getGitSummary();
   if (!summary.available) {
@@ -74,6 +107,11 @@ export async function getGitStatus() {
   return { ...summary, status: summary.status ?? '' };
 }
 
+/**
+ * Gets the status of all changed files in the current workspace.
+ * Parses git porcelain output to determine staged/unstaged state.
+ * @returns {Promise<{available: boolean, reason?: string, files: GitFileStatus[]}>} File status information
+ */
 export async function getGitFileStatuses() {
   const cwd = await getCurrentWorkspacePath();
   if (!cwd) {

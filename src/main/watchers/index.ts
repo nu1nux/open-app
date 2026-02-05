@@ -1,16 +1,31 @@
+/**
+ * @fileoverview File system watchers for detecting workspace and git changes.
+ * Uses chokidar to watch for file changes and emits debounced events.
+ * @module main/watchers
+ */
+
 import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
 import { emitAppEvent } from '../events';
 
+/** File watcher for workspace files */
 let fileWatcher: FSWatcher | null = null;
+/** Watcher for .git directory changes */
 let gitWatcher: FSWatcher | null = null;
+/** Timer for debouncing event emissions */
 let debounceTimer: NodeJS.Timeout | null = null;
+/** Pending events to emit after debounce */
 let pending = {
   workspace: false,
   git: false,
   diff: false
 };
 
+/**
+ * Schedules events to be emitted after a debounce period.
+ * Consolidates multiple rapid file changes into a single event emission.
+ * @param {Partial<typeof pending>} events - Events to schedule for emission
+ */
 function schedule(events: Partial<typeof pending>) {
   pending = {
     workspace: pending.workspace || Boolean(events.workspace),
@@ -29,6 +44,10 @@ function schedule(events: Partial<typeof pending>) {
   }, 250);
 }
 
+/**
+ * Stops all active file system watchers.
+ * @returns {Promise<void>}
+ */
 export async function stopWatchers() {
   if (fileWatcher) {
     await fileWatcher.close();
@@ -40,6 +59,12 @@ export async function stopWatchers() {
   }
 }
 
+/**
+ * Starts file system watchers for a workspace directory.
+ * Watches for general file changes and git-specific changes separately.
+ * @param {string} rootPath - Root directory path to watch
+ * @returns {Promise<void>}
+ */
 export async function startWatchers(rootPath: string) {
   await stopWatchers();
 

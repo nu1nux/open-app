@@ -1,5 +1,14 @@
+/**
+ * @fileoverview TypeScript type declarations for the renderer process.
+ * Defines the global window.openApp API types exposed by the preload script.
+ * @module renderer/vite-env
+ */
+
 /// <reference types="vite/client" />
 
+/**
+ * Workspace entry stored in the application.
+ */
 type WorkspaceEntry = {
   id: string;
   name: string;
@@ -7,17 +16,26 @@ type WorkspaceEntry = {
   lastOpenedAt: string;
 };
 
+/**
+ * Workspace discovered during filesystem scanning.
+ */
 type DiscoveredWorkspace = {
   name: string;
   path: string;
   lastModifiedAt: string;
 };
 
+/**
+ * Result of a workspace removal operation.
+ */
 type WorkspaceRemoveResult = {
   removed: boolean;
   current: WorkspaceEntry | null;
 };
 
+/**
+ * Summary information about a git repository.
+ */
 type GitSummary = {
   available: boolean;
   reason?: string;
@@ -27,6 +45,9 @@ type GitSummary = {
   lastCommit?: string;
 };
 
+/**
+ * Status information for a single file in the git repository.
+ */
 type GitFileStatus = {
   path: string;
   staged: boolean;
@@ -34,12 +55,18 @@ type GitFileStatus = {
   status: string;
 };
 
+/**
+ * Result of getting git file statuses.
+ */
 type GitFilesResult = {
   available: boolean;
   reason?: string;
   files: GitFileStatus[];
 };
 
+/**
+ * Result of a diff operation.
+ */
 type DiffResult = {
   available: boolean;
   reason?: string;
@@ -47,8 +74,14 @@ type DiffResult = {
   staged?: string;
 };
 
+/**
+ * Application event types for IPC communication.
+ */
 type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed';
 
+/**
+ * Global type declarations for the window object.
+ */
 declare global {
   interface Window {
     openApp: {

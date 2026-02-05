@@ -1,9 +1,24 @@
+/**
+ * @fileoverview Preload script for the Electron renderer process.
+ * Exposes a safe API to the renderer via context bridge.
+ * Validates IPC channels to prevent unauthorized communication.
+ * @module preload
+ */
+
 import { contextBridge, ipcRenderer } from 'electron';
 
+/** Set of valid IPC event channels that can be subscribed to */
 const validChannels = new Set(['workspace:changed', 'git:changed', 'diff:changed']);
 
+/**
+ * Application event types for IPC communication.
+ */
 type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed';
 
+/**
+ * Exposes the openApp API to the renderer process.
+ * Provides typed methods for workspace, git, and diff operations.
+ */
 contextBridge.exposeInMainWorld('openApp', {
   ping: () => ipcRenderer.invoke('ping'),
   workspace: {

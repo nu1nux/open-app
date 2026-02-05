@@ -1,24 +1,40 @@
+/**
+ * @fileoverview Main application component for the desktop UI.
+ * Renders the sidebar, navigation, thread list, and main content area.
+ * @module renderer/App
+ */
+
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 
+/**
+ * Navigation item configuration.
+ */
 type NavItem = {
   id: string;
   label: string;
   icon: ReactNode;
 };
 
+/**
+ * Thread item configuration for the sidebar thread list.
+ */
 type ThreadItem = {
   id: string;
   title: string;
   time?: string;
 };
 
+/**
+ * Thread group configuration containing multiple thread items.
+ */
 type ThreadGroup = {
   id: string;
   name: string;
   items: ThreadItem[];
 };
 
+/** Navigation items for the sidebar */
 const navItems: NavItem[] = [
   {
     id: 'new-thread',
@@ -55,6 +71,7 @@ const navItems: NavItem[] = [
   }
 ];
 
+/** Thread groups for the sidebar thread list */
 const threadGroups: ThreadGroup[] = [
   {
     id: 'open-app',
@@ -83,6 +100,7 @@ const threadGroups: ThreadGroup[] = [
   }
 ];
 
+/** Suggestion cards displayed in the hero section */
 const suggestionCards = [
   {
     id: 'card-1',
@@ -118,6 +136,12 @@ const suggestionCards = [
   }
 ];
 
+/**
+ * Main application component.
+ * Renders the complete desktop application UI including sidebar,
+ * navigation, thread list, hero section, and right panel.
+ * @returns {JSX.Element} The rendered application
+ */
 export default function App() {
   const [activeNav, setActiveNav] = useState('new-thread');
   const [activeThread, setActiveThread] = useState('thread-1');
