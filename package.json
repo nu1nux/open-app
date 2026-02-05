@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm -F @open/desktop dev",
     "build": "pnpm -F @open/desktop build",
-    "typecheck": "pnpm -F @open/desktop typecheck"
+    "typecheck": "pnpm -F @open/desktop typecheck",
+    "test": "pnpm -r test"
   }
 }
