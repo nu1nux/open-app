@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('openApp', {
     current: () => ipcRenderer.invoke('diff:current'),
     file: (filePath: string) => ipcRenderer.invoke('diff:file', filePath)
   },
+  thread: {
+    list: (workspaceId: string) => ipcRenderer.invoke('thread:list', workspaceId),
+    create: (workspaceId: string, title: string) => ipcRenderer.invoke('thread:create', workspaceId, title),
+    rename: (id: string, title: string) => ipcRenderer.invoke('thread:rename', id, title),
+    remove: (id: string) => ipcRenderer.invoke('thread:remove', id)
+  },
   events: {
     on: (channel: AppEvent, handler: () => void) => {
       if (!validChannels.has(channel)) return () => {};

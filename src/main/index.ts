@@ -19,6 +19,7 @@ import { initCheckpoints } from './checkpoints';
 import { initIntegrations } from './integrations';
 import { initProviders } from './providers';
 import { initStorage } from './storage';
+import { initThread } from './thread';
 
 /** Development server URL from environment variables */
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
@@ -81,6 +82,7 @@ async function initModules() {
   initIntegrations();
   initProviders();
   initStorage();
+  await initThread();
   registerIpc();
 }
 

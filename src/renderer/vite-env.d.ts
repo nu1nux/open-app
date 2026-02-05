@@ -75,6 +75,17 @@ type DiffResult = {
 };
 
 /**
+ * Represents a conversation thread in a workspace.
+ */
+type Thread = {
+  id: string;
+  workspaceId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+/**
  * Application event types for IPC communication.
  */
 type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed';
@@ -115,6 +126,12 @@ declare global {
       diff: {
         current: () => Promise<DiffResult>;
         file: (filePath: string) => Promise<DiffResult>;
+      };
+      thread: {
+        list: (workspaceId: string) => Promise<Thread[]>;
+        create: (workspaceId: string, title: string) => Promise<Thread>;
+        rename: (id: string, title: string) => Promise<Thread | null>;
+        remove: (id: string) => Promise<boolean>;
       };
       events: {
         on: (channel: AppEvent, handler: () => void) => () => void;

@@ -22,12 +22,12 @@ const state = {
   ignoredPaths: []
 };
 let ready = Promise.resolve();
-function getStorePath() {
+function getStorePath$1() {
   return path.join(app.getPath("userData"), "workspaces.json");
 }
 async function loadState() {
   try {
-    const data = await fs.readFile(getStorePath(), "utf-8");
+    const data = await fs.readFile(getStorePath$1(), "utf-8");
     const parsed = JSON.parse(data);
     state.currentId = parsed.currentId ?? null;
     state.entries = Array.isArray(parsed.entries) ? parsed.entries : [];
@@ -44,7 +44,7 @@ async function saveState() {
     entries: state.entries,
     ignoredPaths: state.ignoredPaths
   };
-  await fs.writeFile(getStorePath(), JSON.stringify(payload, null, 2), "utf-8");
+  await fs.writeFile(getStorePath$1(), JSON.stringify(payload, null, 2), "utf-8");
 }
 function findEntryByPath(dirPath) {
   return state.entries.find((entry) => entry.path === dirPath) ?? null;
@@ -5618,6 +5618,55 @@ async function startWatchers(rootPath) {
     schedule({ git: true, diff: true });
   });
 }
+let store = { threads: [] };
+function getStorePath() {
+  return path.join(app.getPath("userData"), "threads.json");
+}
+async function loadStore() {
+  try {
+    const data = await fs.readFile(getStorePath(), "utf-8");
+    store = JSON.parse(data);
+  } catch {
+    store = { threads: [] };
+  }
+}
+async function saveStore() {
+  await fs.writeFile(getStorePath(), JSON.stringify(store, null, 2), "utf-8");
+}
+async function initThread() {
+  await loadStore();
+}
+async function listThreads(workspaceId) {
+  return store.threads.filter((t) => t.workspaceId === workspaceId).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+async function createThread(workspaceId, title) {
+  const now = Date.now();
+  const thread = {
+    id: randomUUID(),
+    workspaceId,
+    title,
+    createdAt: now,
+    updatedAt: now
+  };
+  store.threads.push(thread);
+  await saveStore();
+  return thread;
+}
+async function renameThread(id, title) {
+  const thread = store.threads.find((t) => t.id === id);
+  if (!thread) return null;
+  thread.title = title;
+  thread.updatedAt = Date.now();
+  await saveStore();
+  return thread;
+}
+async function removeThread(id) {
+  const index = store.threads.findIndex((t) => t.id === id);
+  if (index === -1) return false;
+  store.threads.splice(index, 1);
+  await saveStore();
+  return true;
+}
 let eventsBound = false;
 function broadcast(event) {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -5718,6 +5767,18 @@ function registerIpc() {
   ipcMain.handle("diff:file", async (_event, filePath) => {
     return getDiffForFile(filePath);
   });
+  ipcMain.handle("thread:list", async (_event, workspaceId) => {
+    return listThreads(workspaceId);
+  });
+  ipcMain.handle("thread:create", async (_event, workspaceId, title) => {
+    return createThread(workspaceId, title);
+  });
+  ipcMain.handle("thread:rename", async (_event, id, title) => {
+    return renameThread(id, title);
+  });
+  ipcMain.handle("thread:remove", async (_event, id) => {
+    return removeThread(id);
+  });
   refreshWatchers().catch(() => {
   });
 }
@@ -5752,6 +5813,7 @@ function createWindow() {
 }
 async function initModules() {
   initWorkspace();
+  await initThread();
   registerIpc();
 }
 app.whenReady().then(async () => {

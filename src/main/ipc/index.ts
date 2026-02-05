@@ -24,6 +24,7 @@ import { getGitSummary, getGitStatus, getGitFileStatuses } from '../git';
 import { getDiff, getDiffForFile } from '../diff';
 import { emitAppEvent, onAppEvent, type AppEvent } from '../events';
 import { startWatchers, stopWatchers } from '../watchers';
+import { listThreads, createThread, renameThread, removeThread } from '../thread';
 
 /** Flag to track if event listeners have been bound */
 let eventsBound = false;
@@ -164,6 +165,22 @@ export function registerIpc() {
 
   ipcMain.handle('diff:file', async (_event, filePath: string) => {
     return getDiffForFile(filePath);
+  });
+
+  ipcMain.handle('thread:list', async (_event, workspaceId: string) => {
+    return listThreads(workspaceId);
+  });
+
+  ipcMain.handle('thread:create', async (_event, workspaceId: string, title: string) => {
+    return createThread(workspaceId, title);
+  });
+
+  ipcMain.handle('thread:rename', async (_event, id: string, title: string) => {
+    return renameThread(id, title);
+  });
+
+  ipcMain.handle('thread:remove', async (_event, id: string) => {
+    return removeThread(id);
   });
 
   refreshWatchers().catch(() => {});
