@@ -9,7 +9,7 @@ import { EventEmitter } from 'node:events';
 /**
  * Application event types that can be emitted and listened to.
  */
-export type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed';
+export type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed' | 'delete:changed';
 
 /**
  * Event listener callback function type.

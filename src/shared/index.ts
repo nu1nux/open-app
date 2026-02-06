@@ -10,3 +10,5 @@ export * from './scripts';
 export * from './checkpoints';
 export * from './thread';
 export * from './composer';
+export * from './delete';
+export * from './featureFlags';

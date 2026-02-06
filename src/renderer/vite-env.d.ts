@@ -85,6 +85,49 @@ type Thread = {
   updatedAt: number;
 };
 
+type DeleteEntityType = 'thread' | 'workspace';
+
+type DeleteActionStatus = 'pending' | 'committed' | 'reverted' | 'failed';
+
+type DeleteErrorCode =
+  | 'DELETE_NOT_FOUND'
+  | 'DELETE_ALREADY_FINALIZED'
+  | 'DELETE_UNDO_EXPIRED'
+  | 'DELETE_COMMIT_FAILED'
+  | 'DELETE_FEATURE_DISABLED';
+
+type DeleteSnapshot = {
+  entityType: DeleteEntityType;
+  payload: Record<string, unknown>;
+};
+
+type DeleteAction = {
+  id: string;
+  entityType: DeleteEntityType;
+  entityId: string;
+  status: DeleteActionStatus;
+  createdAt: number;
+  deadlineAt: number;
+  updatedAt: number;
+  snapshot: DeleteSnapshot;
+  errorCode?: DeleteErrorCode;
+  errorMessage?: string;
+};
+
+type DeleteRequest = {
+  entityType: DeleteEntityType;
+  entityId: string;
+  snapshot: DeleteSnapshot;
+};
+
+type DeleteUndoRequest = {
+  actionId: string;
+};
+
+type DeleteResult =
+  | { ok: true; action: DeleteAction }
+  | { ok: false; error: { code: DeleteErrorCode; message: string } };
+
 /**
  * Supported slash command names.
  */
@@ -210,7 +253,7 @@ type ComposerExecutionResult = {
 /**
  * Application event types for IPC communication.
  */
-type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed';
+type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed' | 'delete:changed';
 
 /**
  * Global type declarations for the window object.
@@ -254,6 +297,11 @@ declare global {
         create: (workspaceId: string, title: string) => Promise<Thread>;
         rename: (id: string, title: string) => Promise<Thread | null>;
         remove: (id: string) => Promise<boolean>;
+      };
+      delete: {
+        request: (input: DeleteRequest) => Promise<DeleteResult>;
+        undo: (input: DeleteUndoRequest) => Promise<DeleteResult>;
+        listPending: () => Promise<DeleteAction[]>;
       };
       composer: {
         suggest: (input: {

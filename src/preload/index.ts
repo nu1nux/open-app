@@ -8,12 +8,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 /** Set of valid IPC event channels that can be subscribed to */
-const validChannels = new Set(['workspace:changed', 'git:changed', 'diff:changed']);
+const validChannels = new Set(['workspace:changed', 'git:changed', 'diff:changed', 'delete:changed']);
 
 /**
  * Application event types for IPC communication.
  */
-type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed';
+type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed' | 'delete:changed';
 
 /**
  * Exposes the openApp API to the renderer process.
@@ -57,6 +57,12 @@ contextBridge.exposeInMainWorld('openApp', {
     create: (workspaceId: string, title: string) => ipcRenderer.invoke('thread:create', workspaceId, title),
     rename: (id: string, title: string) => ipcRenderer.invoke('thread:rename', id, title),
     remove: (id: string) => ipcRenderer.invoke('thread:remove', id)
+  },
+  delete: {
+    request: (input: { entityType: 'thread' | 'workspace'; entityId: string; snapshot: { entityType: 'thread' | 'workspace'; payload: Record<string, unknown> } }) =>
+      ipcRenderer.invoke('delete:request', input),
+    undo: (input: { actionId: string }) => ipcRenderer.invoke('delete:undo', input),
+    listPending: () => ipcRenderer.invoke('delete:listPending')
   },
   composer: {
     suggest: (input: {

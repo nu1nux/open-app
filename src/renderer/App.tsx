@@ -4,9 +4,9 @@
  * @module renderer/App
  */
 
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { useWorkspaceStore, useGitStore, useThreadStore } from './stores';
+import { useWorkspaceStore, useGitStore, useThreadStore, useDeleteStore } from './stores';
 import { useInitApp } from './hooks/useInitApp';
 import { WelcomePage, FileList } from './components';
 import type { ComposerSuggestion } from './types';
@@ -30,7 +30,8 @@ import {
   DocumentIcon,
   AttachIcon,
   MicrophoneIcon,
-  SendIcon
+  SendIcon,
+  TrashIcon
 } from './icons';
 
 /**
@@ -83,6 +84,7 @@ export default function App() {
   const { current: workspace, list: workspaces } = useWorkspaceStore();
   const { summary: gitSummary, files: gitFiles } = useGitStore();
   const { threads, activeId: activeThread, setActive: setActiveThread, createThread } = useThreadStore();
+  const { pending: pendingDeletes, requestThreadDelete, requestWorkspaceDelete, undoDelete } = useDeleteStore();
 
   const [activeNav, setActiveNav] = useState('new-thread');
   const [changesView, setChangesView] = useState<'unstaged' | 'staged'>('staged');
@@ -93,6 +95,7 @@ export default function App() {
   const [composerBusy, setComposerBusy] = useState(false);
   const [modelLabel, setModelLabel] = useState('Claude Code');
   const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
+  const [deleteNow, setDeleteNow] = useState(() => Date.now());
   const [composerFeedback, setComposerFeedback] = useState<{
     tone: 'info' | 'error';
     text: string;
@@ -113,6 +116,31 @@ export default function App() {
   const emptyTitle = changesView === 'staged' ? 'No staged changes' : 'No unstaged changes';
   const emptySubtitle =
     changesView === 'staged' ? 'Accept edits to stage them' : 'Working tree is clean';
+
+  useEffect(() => {
+    if (pendingDeletes.length === 0) return;
+    const timer = window.setInterval(() => {
+      setDeleteNow(Date.now());
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [pendingDeletes.length]);
+
+  const deleteThreadWithConfirm = async (threadId: string) => {
+    const thread = threads.find((item) => item.id === threadId);
+    if (!thread) return;
+    const confirmed = window.confirm('Delete this thread? You can undo for 5 seconds.');
+    if (!confirmed) return;
+    await requestThreadDelete(thread);
+  };
+
+  const deleteWorkspaceWithConfirm = async () => {
+    if (!workspace) return;
+    const confirmed = window.confirm(
+      'Remove this project from Open App? Files on disk will not be deleted. You can undo for 5 seconds.'
+    );
+    if (!confirmed) return;
+    await requestWorkspaceDelete(workspace);
+  };
 
   const closeComposerSuggestions = () => {
     setComposerSuggestions([]);
@@ -306,27 +334,46 @@ export default function App() {
 
             <div className="thread-group">
               <div className="group-title">
-                <span className="group-icon">
-                  <FolderIcon />
-                </span>
-                <span>{workspace.name}</span>
+                <div className="group-title-main">
+                  <span className="group-icon">
+                    <FolderIcon />
+                  </span>
+                  <span>{workspace.name}</span>
+                </div>
+                <BaseButton
+                  className="thread-item-delete project-delete"
+                  type="button"
+                  aria-label="Remove project"
+                  onClick={deleteWorkspaceWithConfirm}
+                >
+                  <TrashIcon />
+                </BaseButton>
               </div>
               {threads.length === 0 ? (
                 <div className="group-empty">No threads</div>
               ) : (
                 <div className="thread-list">
                   {threads.map((thread) => (
-                    <BaseButton
-                      key={thread.id}
-                      className={activeThread === thread.id ? 'thread-item active' : 'thread-item'}
-                      onClick={() => setActiveThread(thread.id)}
-                      type="button"
-                    >
-                      <span className="thread-title">{thread.title}</span>
-                      <span className="thread-time">
-                        {formatRelativeTime(thread.updatedAt)}
-                      </span>
-                    </BaseButton>
+                    <div key={thread.id} className="thread-row">
+                      <BaseButton
+                        className={activeThread === thread.id ? 'thread-item active' : 'thread-item'}
+                        onClick={() => setActiveThread(thread.id)}
+                        type="button"
+                      >
+                        <span className="thread-title">{thread.title}</span>
+                        <span className="thread-time">
+                          {formatRelativeTime(thread.updatedAt)}
+                        </span>
+                      </BaseButton>
+                      <BaseButton
+                        className="thread-item-delete"
+                        type="button"
+                        aria-label={`Delete thread ${thread.title}`}
+                        onClick={() => void deleteThreadWithConfirm(thread.id)}
+                      >
+                        <TrashIcon />
+                      </BaseButton>
+                    </div>
                   ))}
                 </div>
               )}
@@ -556,6 +603,28 @@ export default function App() {
           </aside>
         </div>
       </div>
+      {pendingDeletes.length > 0 ? (
+        <div className="delete-toast-stack">
+          {pendingDeletes.map((action) => {
+            const remaining = Math.max(0, Math.ceil((action.deadlineAt - deleteNow) / 1000));
+            return (
+              <div key={action.id} className="delete-toast">
+                <span className="delete-toast-label">
+                  {action.entityType === 'thread' ? 'Thread deleted' : 'Project removed'}
+                </span>
+                <span className="delete-toast-time">{remaining}s</span>
+                <BaseButton
+                  className="delete-toast-undo"
+                  type="button"
+                  onClick={() => void undoDelete(action.id)}
+                >
+                  Undo
+                </BaseButton>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -166,6 +166,17 @@ export function MicrophoneIcon(props: IconProps) {
   );
 }
 
+export function TrashIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" {...props}>
+      <path d="M4.5 6h11" />
+      <path d="M8 6V4.5h4V6" />
+      <rect x="5.5" y="6" width="9" height="10" rx="1.5" />
+      <path d="M8.5 9v5M11.5 9v5" />
+    </svg>
+  );
+}
+
 export function SendIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" {...props}>

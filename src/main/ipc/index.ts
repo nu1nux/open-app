@@ -28,6 +28,10 @@ import { listThreads, createThread, renameThread, removeThread } from '../thread
 import { prepareComposer, suggestComposer, getWorkspacePathById } from '../composer';
 import { executeComposerRequest } from '../providers';
 import type { ComposerPrepareInput, ComposerSuggestInput } from '../../shared/composer';
+import type { DeleteRequest, DeleteResult, DeleteUndoRequest } from '../../shared/delete';
+import { DELETE_TRANSACTIONS_FLAG } from '../../shared/featureFlags';
+import { getDeleteCoordinator } from '../delete';
+import { isDeleteTransactionsEnabled } from '../delete/featureFlag';
 
 /** Flag to track if event listeners have been bound */
 let eventsBound = false;
@@ -68,7 +72,16 @@ export function registerIpc() {
     onAppEvent('workspace:changed', () => broadcast('workspace:changed'));
     onAppEvent('git:changed', () => broadcast('git:changed'));
     onAppEvent('diff:changed', () => broadcast('diff:changed'));
+    onAppEvent('delete:changed', () => broadcast('delete:changed'));
   }
+
+  const getFeatureDisabledDeleteResult = (): DeleteResult => ({
+    ok: false,
+    error: {
+      code: 'DELETE_FEATURE_DISABLED',
+      message: `${DELETE_TRANSACTIONS_FLAG} is disabled`
+    }
+  });
 
   ipcMain.handle('ping', async () => {
     return 'pong from main';
@@ -184,6 +197,27 @@ export function registerIpc() {
 
   ipcMain.handle('thread:remove', async (_event, id: string) => {
     return removeThread(id);
+  });
+
+  ipcMain.handle('delete:request', async (_event, request: DeleteRequest) => {
+    if (!isDeleteTransactionsEnabled()) {
+      return getFeatureDisabledDeleteResult();
+    }
+    return getDeleteCoordinator().request(request);
+  });
+
+  ipcMain.handle('delete:undo', async (_event, request: DeleteUndoRequest) => {
+    if (!isDeleteTransactionsEnabled()) {
+      return getFeatureDisabledDeleteResult();
+    }
+    return getDeleteCoordinator().undo(request.actionId);
+  });
+
+  ipcMain.handle('delete:listPending', async () => {
+    if (!isDeleteTransactionsEnabled()) {
+      return [];
+    }
+    return getDeleteCoordinator().listPending();
   });
 
   ipcMain.handle('composer:suggest', async (_event, input: ComposerSuggestInput) => {

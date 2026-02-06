@@ -6,3 +6,4 @@
 export { useWorkspaceStore } from './workspaceStore';
 export { useGitStore } from './gitStore';
 export { useThreadStore } from './threadStore';
+export { useDeleteStore } from './deleteStore';

@@ -17,6 +17,11 @@ type WorkspaceState = {
   fetchList: () => Promise<void>;
   setCurrent: (id: string) => Promise<void>;
   pick: () => Promise<void>;
+  removeWorkspaceLocal: (id: string) => WorkspaceEntry | null;
+  restoreWorkspaceLocal: (
+    workspace: WorkspaceEntry,
+    options?: { index?: number; currentId?: string | null }
+  ) => void;
 };
 
 /**
@@ -53,5 +58,53 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       set({ current });
     }
     set({ isLoading: false });
+  },
+
+  removeWorkspaceLocal: (id: string) => {
+    let removed: WorkspaceEntry | null = null;
+    set((state) => {
+      removed = state.list.find((workspace) => workspace.id === id) ?? null;
+      const nextList = state.list.filter((workspace) => workspace.id !== id);
+      const nextCurrent =
+        state.current?.id === id
+          ? nextList[0] ?? null
+          : state.current && nextList.some((workspace) => workspace.id === state.current?.id)
+            ? state.current
+            : nextList[0] ?? null;
+      return {
+        list: nextList,
+        current: nextCurrent
+      };
+    });
+    return removed;
+  },
+
+  restoreWorkspaceLocal: (
+    workspace: WorkspaceEntry,
+    options?: { index?: number; currentId?: string | null }
+  ) => {
+    set((state) => {
+      const nextList = [...state.list];
+      const existingIndex = nextList.findIndex((entry) => entry.id === workspace.id);
+      if (existingIndex >= 0) {
+        nextList[existingIndex] = workspace;
+      } else {
+        const insertAt = options?.index ?? 0;
+        const boundedIndex = Math.min(Math.max(insertAt, 0), nextList.length);
+        nextList.splice(boundedIndex, 0, workspace);
+      }
+
+      const nextCurrent =
+        options?.currentId === workspace.id
+          ? workspace
+          : state.current && nextList.some((entry) => entry.id === state.current?.id)
+            ? state.current
+            : nextList[0] ?? null;
+
+      return {
+        list: nextList,
+        current: nextCurrent
+      };
+    });
   }
 }));

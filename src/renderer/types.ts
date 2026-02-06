@@ -47,6 +47,73 @@ export type Thread = {
 };
 
 /**
+ * Delete transaction entity types.
+ */
+export type DeleteEntityType = 'thread' | 'workspace';
+
+/**
+ * Delete transaction lifecycle status.
+ */
+export type DeleteActionStatus = 'pending' | 'committed' | 'reverted' | 'failed';
+
+/**
+ * Delete transaction error code values.
+ */
+export type DeleteErrorCode =
+  | 'DELETE_NOT_FOUND'
+  | 'DELETE_ALREADY_FINALIZED'
+  | 'DELETE_UNDO_EXPIRED'
+  | 'DELETE_COMMIT_FAILED'
+  | 'DELETE_FEATURE_DISABLED';
+
+/**
+ * Snapshot payload used to restore optimistic UI state.
+ */
+export type DeleteSnapshot = {
+  entityType: DeleteEntityType;
+  payload: Record<string, unknown>;
+};
+
+/**
+ * Delete transaction action payload.
+ */
+export type DeleteAction = {
+  id: string;
+  entityType: DeleteEntityType;
+  entityId: string;
+  status: DeleteActionStatus;
+  createdAt: number;
+  deadlineAt: number;
+  updatedAt: number;
+  snapshot: DeleteSnapshot;
+  errorCode?: DeleteErrorCode;
+  errorMessage?: string;
+};
+
+/**
+ * Delete request payload.
+ */
+export type DeleteRequest = {
+  entityType: DeleteEntityType;
+  entityId: string;
+  snapshot: DeleteSnapshot;
+};
+
+/**
+ * Delete undo request payload.
+ */
+export type DeleteUndoRequest = {
+  actionId: string;
+};
+
+/**
+ * Delete API result payload.
+ */
+export type DeleteResult =
+  | { ok: true; action: DeleteAction }
+  | { ok: false; error: { code: DeleteErrorCode; message: string } };
+
+/**
  * Supported slash command names for composer.
  */
 export type CommandName =

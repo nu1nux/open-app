@@ -8,7 +8,7 @@ import { app, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { registerIpc } from './ipc';
-import { initWorkspace } from './workspace';
+import { initWorkspace, removeWorkspace } from './workspace';
 import { initGit } from './git';
 import { initDiff } from './diff';
 import { initScripts } from './scripts';
@@ -19,7 +19,9 @@ import { initCheckpoints } from './checkpoints';
 import { initIntegrations } from './integrations';
 import { initProviders } from './providers';
 import { initStorage } from './storage';
-import { initThread } from './thread';
+import { initThread, removeThread } from './thread';
+import { emitAppEvent } from './events';
+import { initDeleteCoordinator } from './delete';
 
 /** Development server URL from environment variables */
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
@@ -200,6 +202,11 @@ async function initModules() {
   initProviders();
   initStorage();
   await initThread();
+  initDeleteCoordinator({
+    commitThread: removeThread,
+    commitWorkspace: removeWorkspace,
+    onChanged: () => emitAppEvent('delete:changed')
+  });
   registerIpc();
 }
 
