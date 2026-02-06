@@ -4,11 +4,11 @@
  * @module renderer/App
  */
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useWorkspaceStore, useGitStore, useThreadStore } from './stores';
 import { useInitApp } from './hooks/useInitApp';
-import { WelcomePage, FileList, SplashScreen } from './components';
+import { WelcomePage, FileList } from './components';
 import type { ComposerSuggestion } from './types';
 import { Button as BaseButton } from '@base-ui/react/button';
 import { Input as BaseInput } from '@base-ui/react/input';
@@ -84,7 +84,6 @@ export default function App() {
   const { summary: gitSummary, files: gitFiles } = useGitStore();
   const { threads, activeId: activeThread, setActive: setActiveThread, createThread } = useThreadStore();
 
-  const [showSplash, setShowSplash] = useState(true);
   const [activeNav, setActiveNav] = useState('new-thread');
   const [changesView, setChangesView] = useState<'unstaged' | 'staged'>('staged');
   const [composerValue, setComposerValue] = useState('');
@@ -100,11 +99,6 @@ export default function App() {
   } | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
   const suggestionRequestId = useRef(0);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 700);
-    return () => clearTimeout(timer);
-  }, []);
 
   const stagedFiles = useMemo(
     () => gitFiles.filter((f) => f.staged),
@@ -269,10 +263,6 @@ export default function App() {
       setComposerBusy(false);
     }
   };
-
-  if (showSplash) {
-    return <SplashScreen />;
-  }
 
   if (!workspace) {
     return <WelcomePage recentWorkspaces={workspaces} />;

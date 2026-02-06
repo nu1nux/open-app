@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { EventEmitter } from "node:events";
 import chokidar from "chokidar";
+import { execa } from "execa";
 import __cjs_mod__ from "node:module";
 const __filename = import.meta.filename;
 const __dirname = import.meta.dirname;
@@ -467,6 +468,622 @@ async function removeThread(id) {
   await saveStore();
   return true;
 }
+const commandRegistry = [
+  {
+    name: "help",
+    syntax: "/help",
+    description: "Show supported slash commands and usage.",
+    minArgs: 0,
+    maxArgs: 0,
+    allowFlags: false
+  },
+  {
+    name: "clear",
+    syntax: "/clear",
+    description: "Clear the current composer draft context.",
+    minArgs: 0,
+    maxArgs: 0,
+    allowFlags: false
+  },
+  {
+    name: "model",
+    syntax: "/model <model>",
+    description: "Override the Claude model for subsequent requests.",
+    minArgs: 1,
+    maxArgs: 1,
+    allowFlags: false
+  },
+  {
+    name: "compact",
+    syntax: "/compact",
+    description: "Request concise output style.",
+    minArgs: 0,
+    maxArgs: 0,
+    allowFlags: false
+  },
+  {
+    name: "review",
+    syntax: "/review",
+    description: "Switch to review-oriented response behavior.",
+    minArgs: 0,
+    maxArgs: 0,
+    allowFlags: false
+  },
+  {
+    name: "plan",
+    syntax: "/plan",
+    description: "Switch to planning-oriented response behavior.",
+    minArgs: 0,
+    maxArgs: 0,
+    allowFlags: false
+  },
+  {
+    name: "status",
+    syntax: "/status",
+    description: "Request current workspace status behavior.",
+    minArgs: 0,
+    maxArgs: 0,
+    allowFlags: false
+  },
+  {
+    name: "diff",
+    syntax: "/diff [target]",
+    description: "Request diff-focused behavior for optional target path.",
+    minArgs: 0,
+    maxArgs: 1,
+    allowFlags: false
+  },
+  {
+    name: "test",
+    syntax: "/test [scope]",
+    description: "Request test-focused behavior for optional scope.",
+    minArgs: 0,
+    maxArgs: 1,
+    allowFlags: false
+  }
+];
+const commandByName = new Map(
+  commandRegistry.map((definition) => [definition.name, definition])
+);
+function listCommands() {
+  return commandRegistry;
+}
+function getCommand(name) {
+  return commandByName.get(name) ?? null;
+}
+function parseArgs(raw) {
+  const args = [];
+  let current = "";
+  let quote = null;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+        continue;
+      }
+      current += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (current) {
+        args.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += ch;
+  }
+  if (current) {
+    args.push(current);
+  }
+  return args;
+}
+function pushDiagnostic(diagnostics, code, message, start, end) {
+  diagnostics.push({
+    code,
+    message,
+    severity: "error",
+    blocking: true,
+    start,
+    end
+  });
+}
+function isMentionBoundary(rawInput, atIndex) {
+  const prev = rawInput[atIndex - 1];
+  if (!prev) return true;
+  return /\s|[([{,]/.test(prev);
+}
+function parseMentionQueries(rawInput) {
+  const mentionQueries = [];
+  const mentionPattern = /@([A-Za-z0-9_./-]+)/g;
+  for (const match of rawInput.matchAll(mentionPattern)) {
+    const start = match.index ?? -1;
+    if (start < 0 || !isMentionBoundary(rawInput, start)) continue;
+    const raw = match[0];
+    const query = match[1];
+    mentionQueries.push({ raw, query, start, end: start + raw.length });
+  }
+  return mentionQueries;
+}
+function buildTokens(rawInput, command, mentions) {
+  const chunks = [];
+  const special = [];
+  if (command) {
+    special.push({
+      kind: "command",
+      raw: command.raw,
+      start: command.start,
+      end: command.end
+    });
+  }
+  for (const mention of mentions) {
+    special.push({
+      kind: "mention",
+      raw: mention.raw,
+      start: mention.start,
+      end: mention.end
+    });
+  }
+  special.sort((a, b) => a.start - b.start);
+  let cursor = 0;
+  for (const token of special) {
+    if (token.start > cursor) {
+      chunks.push({
+        kind: "text",
+        raw: rawInput.slice(cursor, token.start),
+        start: cursor,
+        end: token.start
+      });
+    }
+    chunks.push(token);
+    cursor = token.end;
+  }
+  if (cursor < rawInput.length) {
+    chunks.push({
+      kind: "text",
+      raw: rawInput.slice(cursor),
+      start: cursor,
+      end: rawInput.length
+    });
+  }
+  return chunks;
+}
+function parseComposerInput(rawInput) {
+  const diagnostics = [];
+  const mentionQueries = parseMentionQueries(rawInput);
+  let command = null;
+  const normalizedPrompt = rawInput.trim();
+  const firstNonWhitespace = rawInput.search(/\S/);
+  if (firstNonWhitespace >= 0 && rawInput[firstNonWhitespace] === "/") {
+    const tail = rawInput.slice(firstNonWhitespace);
+    const spaceIndex = tail.search(/\s/);
+    const commandToken = spaceIndex < 0 ? tail : tail.slice(0, spaceIndex);
+    const commandName = commandToken.slice(1).toLowerCase();
+    const argsRaw = spaceIndex < 0 ? "" : tail.slice(spaceIndex + 1).trim();
+    const args = parseArgs(argsRaw);
+    const def = getCommand(commandName);
+    if (!def) {
+      pushDiagnostic(
+        diagnostics,
+        "CMD_UNKNOWN",
+        `Unknown command "/${commandName}".`,
+        firstNonWhitespace,
+        firstNonWhitespace + commandToken.length
+      );
+    } else {
+      command = {
+        name: def.name,
+        args,
+        raw: commandToken,
+        start: firstNonWhitespace,
+        end: firstNonWhitespace + commandToken.length
+      };
+      if (!def.allowFlags && args.some((arg) => arg.startsWith("-"))) {
+        pushDiagnostic(
+          diagnostics,
+          "CMD_UNSUPPORTED_FLAG",
+          `Command "/${def.name}" does not support flags.`,
+          firstNonWhitespace,
+          rawInput.length
+        );
+      } else if (args.length < def.minArgs || args.length > def.maxArgs) {
+        pushDiagnostic(
+          diagnostics,
+          "CMD_INVALID_ARGS",
+          `Invalid arguments for "/${def.name}". Expected syntax: ${def.syntax}.`,
+          firstNonWhitespace,
+          rawInput.length
+        );
+      }
+    }
+  }
+  return {
+    tokens: buildTokens(rawInput, command, mentionQueries),
+    command,
+    mentionQueries,
+    diagnostics,
+    normalizedPrompt
+  };
+}
+const cache = /* @__PURE__ */ new Map();
+const ignoredDirectories = /* @__PURE__ */ new Set([".git", "node_modules", "dist", "build", "coverage", ".next", "out"]);
+const MAX_INDEX_FILES = 8e3;
+const CACHE_TTL_MS = 1e4;
+function toPosixPath(value) {
+  return value.split(path.sep).join("/");
+}
+function isPathInsideWorkspace(workspaceRoot, candidatePath) {
+  const relative = path.relative(workspaceRoot, candidatePath);
+  return relative === "" || !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+async function buildWorkspaceIndex(workspaceId, workspacePath) {
+  const entries = [];
+  const stack = [workspacePath];
+  while (stack.length > 0 && entries.length < MAX_INDEX_FILES) {
+    const current = stack.pop();
+    if (!current) continue;
+    let children = [];
+    try {
+      children = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const child of children) {
+      if (child.name.startsWith(".")) continue;
+      const absolutePath = path.join(current, child.name);
+      if (child.isDirectory()) {
+        if (ignoredDirectories.has(child.name)) continue;
+        stack.push(absolutePath);
+        continue;
+      }
+      if (!child.isFile()) continue;
+      const relativePath = toPosixPath(path.relative(workspacePath, absolutePath));
+      entries.push({
+        kind: "mention",
+        id: `${workspaceId}:${relativePath}`,
+        display: relativePath,
+        value: relativePath,
+        absolutePath,
+        relativePath
+      });
+      if (entries.length >= MAX_INDEX_FILES) break;
+    }
+  }
+  cache.set(workspaceId, { entries, builtAt: Date.now() });
+  return entries;
+}
+async function getWorkspaceIndex(workspaceId, workspacePath) {
+  const hit = cache.get(workspaceId);
+  if (hit && Date.now() - hit.builtAt < CACHE_TTL_MS) {
+    return hit.entries;
+  }
+  return buildWorkspaceIndex(workspaceId, workspacePath);
+}
+async function suggestMentions(workspaceId, workspacePath, query) {
+  const entries = await getWorkspaceIndex(workspaceId, workspacePath);
+  const normalized = query.toLowerCase();
+  if (!normalized) {
+    return entries.slice(0, 20);
+  }
+  const startsWith = entries.filter((entry) => entry.relativePath.toLowerCase().startsWith(normalized));
+  const includes = entries.filter(
+    (entry) => !entry.relativePath.toLowerCase().startsWith(normalized) && entry.relativePath.toLowerCase().includes(normalized)
+  );
+  return [...startsWith, ...includes].slice(0, 20);
+}
+async function resolveMention(workspaceId, workspacePath, query) {
+  const normalized = query.replace(/^\.?\//, "");
+  const directPath = path.resolve(workspacePath, normalized);
+  if (!isPathInsideWorkspace(workspacePath, directPath)) {
+    return { mention: null, reason: "outside-workspace" };
+  }
+  try {
+    const stat = await fs.stat(directPath);
+    if (stat.isFile()) {
+      const relativePath = toPosixPath(path.relative(workspacePath, directPath));
+      return {
+        mention: {
+          id: `${workspaceId}:${relativePath}`,
+          type: "file",
+          workspaceId,
+          absolutePath: directPath,
+          relativePath,
+          display: relativePath
+        }
+      };
+    }
+  } catch {
+  }
+  const matches = await suggestMentions(workspaceId, workspacePath, normalized);
+  const best = matches.find((entry) => entry.relativePath.toLowerCase() === normalized.toLowerCase()) ?? matches[0];
+  if (!best) {
+    return { mention: null, reason: "unresolved" };
+  }
+  return {
+    mention: {
+      id: best.id,
+      type: "file",
+      workspaceId,
+      absolutePath: best.absolutePath,
+      relativePath: best.relativePath,
+      display: best.display
+    }
+  };
+}
+async function getWorkspacePathById(workspaceId) {
+  const workspaces = await listWorkspaces();
+  return workspaces.find((workspace) => workspace.id === workspaceId)?.path ?? null;
+}
+function getCommandSuggestions(query) {
+  const normalized = query.toLowerCase();
+  return listCommands().filter((command) => command.name.startsWith(normalized)).map((command) => ({
+    kind: "command",
+    name: command.name,
+    syntax: command.syntax,
+    description: command.description
+  }));
+}
+function detectSuggestionContext(rawInput, cursor) {
+  const prefix = rawInput.slice(0, Math.max(0, Math.min(cursor, rawInput.length)));
+  const mentionMatch = prefix.match(/(?:^|\s)@([A-Za-z0-9_./-]*)$/);
+  if (mentionMatch) {
+    return { context: "mention", query: mentionMatch[1] };
+  }
+  const commandMatch = prefix.match(/^\s*\/([A-Za-z0-9-]*)$/);
+  if (commandMatch) {
+    return { context: "command", query: commandMatch[1] };
+  }
+  return { context: "none", query: "" };
+}
+async function suggestComposer(input) {
+  const context = detectSuggestionContext(input.rawInput, input.cursor);
+  if (context.context === "none") {
+    return { context: "none", query: "", suggestions: [] };
+  }
+  if (context.context === "command") {
+    return {
+      context: "command",
+      query: context.query,
+      suggestions: getCommandSuggestions(context.query)
+    };
+  }
+  const workspacePath = await getWorkspacePathById(input.workspaceId);
+  if (!workspacePath) {
+    return { context: "mention", query: context.query, suggestions: [] };
+  }
+  const suggestions = await suggestMentions(input.workspaceId, workspacePath, context.query);
+  return {
+    context: "mention",
+    query: context.query,
+    suggestions
+  };
+}
+async function resolveMentions(workspaceId, workspacePath, mentionQueries) {
+  const diagnostics = [];
+  const mentions = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const query of mentionQueries) {
+    const result = await resolveMention(workspaceId, workspacePath, query.query);
+    if (result.mention) {
+      if (!seen.has(result.mention.id)) {
+        seen.add(result.mention.id);
+        mentions.push(result.mention);
+      }
+      continue;
+    }
+    if (result.reason === "outside-workspace") {
+      diagnostics.push({
+        code: "MENTION_OUTSIDE_WORKSPACE",
+        severity: "error",
+        message: `Mention "@${query.query}" is outside the current workspace.`,
+        start: query.start,
+        end: query.end,
+        blocking: true
+      });
+      continue;
+    }
+    diagnostics.push({
+      code: "MENTION_UNRESOLVED",
+      severity: "error",
+      message: `Unable to resolve mention "@${query.query}".`,
+      start: query.start,
+      end: query.end,
+      blocking: true
+    });
+  }
+  return { mentions, diagnostics };
+}
+async function prepareComposer(input) {
+  const draft = parseComposerInput(input.rawInput);
+  const diagnostics = [...draft.diagnostics];
+  let mentions = [];
+  const workspacePath = await getWorkspacePathById(input.workspaceId);
+  if (!workspacePath) {
+    diagnostics.push({
+      code: "PARSE_SYNTAX",
+      severity: "error",
+      message: "No active workspace was found for this composer action.",
+      start: 0,
+      end: input.rawInput.length,
+      blocking: true
+    });
+  } else {
+    const mentionResult = await resolveMentions(input.workspaceId, workspacePath, draft.mentionQueries);
+    mentions = mentionResult.mentions;
+    diagnostics.push(...mentionResult.diagnostics);
+  }
+  return {
+    rawInput: input.rawInput,
+    tokens: draft.tokens,
+    command: draft.command,
+    mentions,
+    normalizedPrompt: draft.normalizedPrompt,
+    diagnostics,
+    blocking: diagnostics.some((diagnostic) => diagnostic.blocking)
+  };
+}
+function providerUnavailable(message) {
+  return {
+    ok: false,
+    provider: "claude-code",
+    diagnostics: [
+      {
+        code: "PROVIDER_UNAVAILABLE",
+        severity: "error",
+        message,
+        start: 0,
+        end: 0,
+        blocking: true
+      }
+    ],
+    action: "none"
+  };
+}
+function providerError(code, message) {
+  return {
+    ok: false,
+    provider: "claude-code",
+    diagnostics: [
+      {
+        code,
+        severity: "error",
+        message,
+        start: 0,
+        end: 0,
+        blocking: true
+      }
+    ],
+    action: "none"
+  };
+}
+function buildPrompt(request) {
+  const { parseResult } = request;
+  const command = parseResult.command;
+  const lines = [];
+  if (command) {
+    const argsText = command.args.join(" ").trim();
+    switch (command.name) {
+      case "compact":
+        lines.push("Respond concisely.");
+        break;
+      case "review":
+        lines.push("Perform a review-style response focused on issues, risks, and missing tests.");
+        break;
+      case "plan":
+        lines.push("Provide an implementation plan with clear steps.");
+        break;
+      case "status":
+        lines.push("Summarize the current workspace status.");
+        break;
+      case "diff":
+        lines.push(argsText ? `Focus on diff analysis for target: ${argsText}.` : "Focus on relevant git diff analysis.");
+        break;
+      case "test":
+        lines.push(argsText ? `Focus on testing scope: ${argsText}.` : "Focus on test strategy and validation.");
+        break;
+    }
+  }
+  if (parseResult.mentions.length > 0) {
+    lines.push(
+      `Referenced files:
+${parseResult.mentions.map((mention) => `- ${mention.relativePath}`).join("\n")}`
+    );
+  }
+  let userPrompt = parseResult.normalizedPrompt;
+  if (command) {
+    const prefix = `/${command.name}`;
+    if (userPrompt.startsWith(prefix)) {
+      userPrompt = userPrompt.slice(prefix.length).trim();
+    }
+  }
+  if (userPrompt) {
+    lines.push(`User request:
+${userPrompt}`);
+  }
+  return lines.join("\n\n").trim();
+}
+async function executeClaudeRequest(request) {
+  const prompt = buildPrompt(request);
+  if (!prompt) {
+    return providerUnavailable("Composer prompt is empty after normalization.");
+  }
+  const args = ["-p", "--output-format", "json"];
+  if (request.modelOverride) {
+    args.push("--model", request.modelOverride);
+  }
+  args.push(prompt);
+  try {
+    const result = await execa("claude", args, {
+      cwd: request.workspacePath,
+      reject: false,
+      timeout: 12e4
+    });
+    const raw = result.stdout.trim() || result.stderr.trim();
+    if (!raw) {
+      return providerUnavailable("Claude Code returned an empty response.");
+    }
+    let payload = null;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = null;
+    }
+    if (payload?.is_error) {
+      const errorMessage = payload.result ?? "Claude Code returned an error response.";
+      const normalized = errorMessage.toLowerCase();
+      if (normalized.includes("invalid_model")) {
+        return providerError("CMD_INVALID_ARGS", errorMessage);
+      }
+      if (normalized.includes("auth") || normalized.includes("token")) {
+        return providerError("PROVIDER_AUTH_REQUIRED", errorMessage);
+      }
+      return providerUnavailable(errorMessage);
+    }
+    return {
+      ok: true,
+      provider: "claude-code",
+      output: payload?.result ?? raw,
+      action: "none"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Claude Code execution failure.";
+    return providerUnavailable(`Failed to execute Claude Code CLI: ${message}`);
+  }
+}
+async function executeComposerRequest(request) {
+  const command = request.parseResult.command;
+  if (command?.name === "help") {
+    return {
+      ok: true,
+      provider: "local",
+      output: "/help, /clear, /model <model>, /compact, /review, /plan, /status, /diff [target], /test [scope]",
+      action: "none"
+    };
+  }
+  if (command?.name === "clear") {
+    return {
+      ok: true,
+      provider: "local",
+      output: "",
+      action: "clear"
+    };
+  }
+  if (command?.name === "model") {
+    return {
+      ok: true,
+      provider: "local",
+      output: `Model override set to ${command.args[0]}.`,
+      modelOverride: command.args[0],
+      action: "none"
+    };
+  }
+  return executeClaudeRequest(request);
+}
 let eventsBound = false;
 function broadcast(event) {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -579,13 +1196,121 @@ function registerIpc() {
   ipcMain.handle("thread:remove", async (_event, id) => {
     return removeThread(id);
   });
+  ipcMain.handle("composer:suggest", async (_event, input) => {
+    return suggestComposer(input);
+  });
+  ipcMain.handle("composer:prepare", async (_event, input) => {
+    return prepareComposer(input);
+  });
+  ipcMain.handle("composer:execute", async (_event, input) => {
+    const parseResult = await prepareComposer(input);
+    if (parseResult.blocking) {
+      return {
+        ok: false,
+        provider: "local",
+        action: "none",
+        diagnostics: parseResult.diagnostics
+      };
+    }
+    const workspacePath = await getWorkspacePathById(input.workspaceId);
+    if (!workspacePath) {
+      return {
+        ok: false,
+        provider: "local",
+        action: "none",
+        diagnostics: [
+          {
+            code: "PARSE_SYNTAX",
+            severity: "error",
+            message: "No active workspace found.",
+            start: 0,
+            end: input.rawInput.length,
+            blocking: true
+          }
+        ]
+      };
+    }
+    return executeComposerRequest({
+      workspaceId: input.workspaceId,
+      workspacePath,
+      threadId: input.threadId,
+      parseResult,
+      modelOverride: input.modelOverride
+    });
+  });
   refreshWatchers().catch(() => {
   });
 }
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
 const fallbackDevServerUrl = "http://127.0.0.1:5173";
 const isDev = Boolean(devServerUrl);
+const minimumSplashMs = 900;
 let mainWindow = null;
+let splashWindow = null;
+function getSplashHtml() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>open-app</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        width: 100vw;
+        height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0f0f10;
+        color: #e8e8e8;
+        overflow: hidden;
+      }
+      .logo {
+        font-size: 36px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        animation: splash-in 320ms ease-out forwards, splash-out 280ms ease-in 560ms forwards;
+      }
+      @keyframes splash-in {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      @keyframes splash-out {
+        from { opacity: 1; transform: scale(1); }
+        to { opacity: 0; transform: scale(1.03); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="logo">open-app</div>
+  </body>
+</html>`;
+}
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 560,
+    height: 360,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    transparent: false,
+    backgroundColor: "#0f0f10",
+    show: true
+  });
+  splashWindow.setMenuBarVisibility(false);
+  splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getSplashHtml())}`);
+  splashWindow.on("closed", () => {
+    splashWindow = null;
+  });
+}
 function createWindow() {
   const preloadMjs = path.join(__dirname, "../preload/index.mjs");
   const preloadJs = path.join(__dirname, "../preload/index.js");
@@ -593,6 +1318,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    show: false,
+    backgroundColor: "#0f0f10",
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -602,7 +1329,6 @@ function createWindow() {
   if (isDev) {
     const url = devServerUrl ?? fallbackDevServerUrl;
     mainWindow.loadURL(url);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
     const indexHtml = path.join(__dirname, "../renderer/index.html");
     mainWindow.loadFile(indexHtml);
@@ -610,6 +1336,36 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  return mainWindow;
+}
+async function createStartupWindows() {
+  const startupAt = Date.now();
+  createSplashWindow();
+  const window = createWindow();
+  await new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    window.webContents.once("did-finish-load", finish);
+    window.webContents.once("did-fail-load", finish);
+  });
+  const elapsed = Date.now() - startupAt;
+  const waitMs = Math.max(0, minimumSplashMs - elapsed);
+  if (waitMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+  }
+  if (!window.isDestroyed()) {
+    window.show();
+    if (isDev) {
+      window.webContents.openDevTools({ mode: "detach" });
+    }
+  }
 }
 async function initModules() {
   initWorkspace();
@@ -618,10 +1374,10 @@ async function initModules() {
 }
 app.whenReady().then(async () => {
   await initModules();
-  createWindow();
+  await createStartupWindows();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      void createStartupWindows();
     }
   });
 });
