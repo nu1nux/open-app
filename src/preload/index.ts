@@ -58,6 +58,30 @@ contextBridge.exposeInMainWorld('openApp', {
     rename: (id: string, title: string) => ipcRenderer.invoke('thread:rename', id, title),
     remove: (id: string) => ipcRenderer.invoke('thread:remove', id)
   },
+  composer: {
+    suggest: (input: {
+      rawInput: string;
+      cursor: number;
+      workspaceId: string;
+      threadId: string | null;
+    }) => ipcRenderer.invoke('composer:suggest', input),
+    prepare: (input: {
+      rawInput: string;
+      cursor: number;
+      workspaceId: string;
+      threadId: string | null;
+      selectedMentionIds?: string[];
+      modelOverride?: string;
+    }) => ipcRenderer.invoke('composer:prepare', input),
+    execute: (input: {
+      rawInput: string;
+      cursor: number;
+      workspaceId: string;
+      threadId: string | null;
+      selectedMentionIds?: string[];
+      modelOverride?: string;
+    }) => ipcRenderer.invoke('composer:execute', input)
+  },
   events: {
     on: (channel: AppEvent, handler: () => void) => {
       if (!validChannels.has(channel)) return () => {};

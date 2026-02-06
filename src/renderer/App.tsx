@@ -4,11 +4,14 @@
  * @module renderer/App
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useWorkspaceStore, useGitStore, useThreadStore } from './stores';
 import { useInitApp } from './hooks/useInitApp';
 import { WelcomePage, FileList, SplashScreen } from './components';
+import type { ComposerSuggestion } from './types';
+import { Button as BaseButton } from '@base-ui/react/button';
+import { Input as BaseInput } from '@base-ui/react/input';
 import {
   NewThreadIcon,
   AutomationsIcon,
@@ -85,6 +88,18 @@ export default function App() {
   const [activeNav, setActiveNav] = useState('new-thread');
   const [changesView, setChangesView] = useState<'unstaged' | 'staged'>('staged');
   const [composerValue, setComposerValue] = useState('');
+  const [composerSuggestions, setComposerSuggestions] = useState<ComposerSuggestion[]>([]);
+  const [activeComposerSuggestion, setActiveComposerSuggestion] = useState(0);
+  const [selectedMentionIds, setSelectedMentionIds] = useState<string[]>([]);
+  const [composerBusy, setComposerBusy] = useState(false);
+  const [modelLabel, setModelLabel] = useState('Claude Code');
+  const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
+  const [composerFeedback, setComposerFeedback] = useState<{
+    tone: 'info' | 'error';
+    text: string;
+  } | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
+  const suggestionRequestId = useRef(0);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 700);
@@ -105,6 +120,156 @@ export default function App() {
   const emptySubtitle =
     changesView === 'staged' ? 'Accept edits to stage them' : 'Working tree is clean';
 
+  const closeComposerSuggestions = () => {
+    setComposerSuggestions([]);
+    setActiveComposerSuggestion(0);
+  };
+
+  const refreshComposerSuggestions = async (rawInput: string, cursor: number) => {
+    if (!workspace) {
+      closeComposerSuggestions();
+      return;
+    }
+
+    const requestId = suggestionRequestId.current + 1;
+    suggestionRequestId.current = requestId;
+
+    try {
+      const result = await window.openApp.composer.suggest({
+        rawInput,
+        cursor,
+        workspaceId: workspace.id,
+        threadId: activeThread
+      });
+
+      if (suggestionRequestId.current !== requestId) return;
+      setComposerSuggestions(result.suggestions);
+      setActiveComposerSuggestion(0);
+    } catch {
+      if (suggestionRequestId.current !== requestId) return;
+      closeComposerSuggestions();
+    }
+  };
+
+  const findMentionRange = (rawInput: string, cursor: number) => {
+    const prefix = rawInput.slice(0, cursor);
+    const match = prefix.match(/(?:^|\s)@([A-Za-z0-9_./-]*)$/);
+    if (!match || match.index === undefined) return null;
+    const localAt = match[0].lastIndexOf('@');
+    if (localAt < 0) return null;
+    const start = match.index + localAt;
+    return { start, end: cursor };
+  };
+
+  const findCommandRange = (rawInput: string) => {
+    const match = rawInput.match(/^\s*\/[^\s]*/);
+    if (!match || match.index === undefined) return null;
+    return {
+      start: match.index,
+      end: match.index + match[0].length
+    };
+  };
+
+  const applyComposerSuggestion = (suggestion: ComposerSuggestion) => {
+    if (!composerInputRef.current) return;
+
+    const input = composerInputRef.current;
+    const cursor = input.selectionStart ?? composerValue.length;
+    let nextValue = composerValue;
+    let nextCursor = cursor;
+
+    if (suggestion.kind === 'command') {
+      const range = findCommandRange(composerValue) ?? { start: 0, end: 0 };
+      const trailing = composerValue.slice(range.end).trimStart();
+      const insert = `/${suggestion.name}`;
+      nextValue = `${composerValue.slice(0, range.start)}${insert}${trailing ? ` ${trailing}` : ' '}`;
+      nextCursor = range.start + insert.length + 1;
+    } else {
+      const range = findMentionRange(composerValue, cursor);
+      if (!range) return;
+      const insert = `@${suggestion.value}`;
+      nextValue = `${composerValue.slice(0, range.start)}${insert}${composerValue.slice(range.end)}`;
+      nextCursor = range.start + insert.length;
+      setSelectedMentionIds((previous) =>
+        previous.includes(suggestion.id) ? previous : [...previous, suggestion.id]
+      );
+    }
+
+    setComposerValue(nextValue);
+    setComposerFeedback(null);
+    closeComposerSuggestions();
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
+
+  const submitComposer = async () => {
+    if (!workspace || composerBusy) return;
+    const rawInput = composerValue.trim();
+    if (!rawInput) return;
+
+    setComposerBusy(true);
+    setComposerFeedback(null);
+
+    const payload = {
+      rawInput,
+      cursor: rawInput.length,
+      workspaceId: workspace.id,
+      threadId: activeThread,
+      selectedMentionIds,
+      modelOverride
+    };
+
+    try {
+      const prepared = await window.openApp.composer.prepare(payload);
+      if (prepared.blocking) {
+        setComposerFeedback({
+          tone: 'error',
+          text: prepared.diagnostics[0]?.message ?? 'Composer input validation failed.'
+        });
+        return;
+      }
+
+      const result = await window.openApp.composer.execute(payload);
+      if (!result.ok) {
+        setComposerFeedback({
+          tone: 'error',
+          text: result.diagnostics?.[0]?.message ?? result.output ?? 'Composer execution failed.'
+        });
+        return;
+      }
+
+      if (result.modelOverride) {
+        setModelLabel(result.modelOverride);
+        setModelOverride(result.modelOverride);
+      }
+
+      if (result.action === 'clear') {
+        setComposerValue('');
+        setSelectedMentionIds([]);
+        closeComposerSuggestions();
+        setComposerFeedback({ tone: 'info', text: 'Composer cleared.' });
+        return;
+      }
+
+      setComposerValue('');
+      setSelectedMentionIds([]);
+      closeComposerSuggestions();
+      setComposerFeedback({
+        tone: 'info',
+        text: result.output ?? `Executed via ${result.provider}.`
+      });
+    } catch {
+      setComposerFeedback({
+        tone: 'error',
+        text: 'Composer request failed. Check provider connection and try again.'
+      });
+    } finally {
+      setComposerBusy(false);
+    }
+  };
+
   if (showSplash) {
     return <SplashScreen />;
   }
@@ -119,7 +284,7 @@ export default function App() {
         <div className="sidebar-top">
           <nav className="sidebar-nav">
             {navItems.map((item) => (
-              <button
+              <BaseButton
                 key={item.id}
                 className={activeNav === item.id ? 'nav-item active' : 'nav-item'}
                 onClick={() => {
@@ -132,7 +297,7 @@ export default function App() {
               >
                 <span className="nav-icon">{item.icon}</span>
                 <span>{item.label}</span>
-              </button>
+              </BaseButton>
             ))}
           </nav>
 
@@ -140,12 +305,12 @@ export default function App() {
             <div className="section-header">
               <span className="section-title">Threads</span>
               <div className="section-actions">
-                <button className="icon-button" type="button" aria-label="Create thread">
+                <BaseButton className="icon-button" type="button" aria-label="Create thread">
                   <PlusIcon />
-                </button>
-                <button className="icon-button" type="button" aria-label="Filter threads">
+                </BaseButton>
+                <BaseButton className="icon-button" type="button" aria-label="Filter threads">
                   <FilterIcon />
-                </button>
+                </BaseButton>
               </div>
             </div>
 
@@ -161,7 +326,7 @@ export default function App() {
               ) : (
                 <div className="thread-list">
                   {threads.map((thread) => (
-                    <button
+                    <BaseButton
                       key={thread.id}
                       className={activeThread === thread.id ? 'thread-item active' : 'thread-item'}
                       onClick={() => setActiveThread(thread.id)}
@@ -171,7 +336,7 @@ export default function App() {
                       <span className="thread-time">
                         {formatRelativeTime(thread.updatedAt)}
                       </span>
-                    </button>
+                    </BaseButton>
                   ))}
                 </div>
               )}
@@ -180,43 +345,43 @@ export default function App() {
         </div>
 
         <div className="sidebar-bottom">
-          <button className="nav-item" type="button">
+          <BaseButton className="nav-item" type="button">
             <span className="nav-icon">
               <SettingsIcon />
             </span>
             <span>Settings</span>
-          </button>
+          </BaseButton>
         </div>
       </aside>
 
       <div className="main-area">
         <header className="topbar">
           <div className="topbar-left" />
-          <button className="topbar-center" type="button">
+          <BaseButton className="topbar-center" type="button">
             Uncommitted changes
             <ChevronDownIcon />
-          </button>
+          </BaseButton>
           <div className="topbar-actions">
-            <button className="pill-button" type="button">
+            <BaseButton className="pill-button" type="button">
               <span className="pill-icon">
                 <UndoIcon />
               </span>
               Open
               <ChevronDownIcon />
-            </button>
-            <button className="pill-button" type="button">
+            </BaseButton>
+            <BaseButton className="pill-button" type="button">
               <span className="pill-icon">
                 <ListIcon />
               </span>
               Commit
               <ChevronDownIcon />
-            </button>
-            <button className="icon-button" type="button" aria-label="View mode">
+            </BaseButton>
+            <BaseButton className="icon-button" type="button" aria-label="View mode">
               <WindowIcon />
-            </button>
-            <button className="icon-button" type="button" aria-label="Share">
+            </BaseButton>
+            <BaseButton className="icon-button" type="button" aria-label="Share">
               <ShareIcon />
-            </button>
+            </BaseButton>
           </div>
         </header>
 
@@ -227,53 +392,138 @@ export default function App() {
                 <span className="hero-dot" />
               </div>
               <h1 className="hero-title">Let&apos;s build</h1>
-              <button className="hero-subtitle" type="button">
+              <BaseButton className="hero-subtitle" type="button">
                 open-app
                 <ChevronDownIcon />
-              </button>
+              </BaseButton>
             </div>
 
             <div className="suggestions">
               <span className="suggestions-label">Explore more</span>
               <div className="suggestions-grid">
                 {suggestionCards.map((card) => (
-                  <button key={card.id} className="suggestion-card" type="button">
+                  <BaseButton key={card.id} className="suggestion-card" type="button">
                     <span className="suggestion-icon">{card.icon}</span>
                     <span className="suggestion-text">{card.title}</span>
-                  </button>
+                  </BaseButton>
                 ))}
               </div>
             </div>
 
             <div className="composer">
-              <div className="composer-input">
-                <input
-                  placeholder="Ask Codex anything, @ to add files, / for commands"
-                  value={composerValue}
-                  onChange={(event) => setComposerValue(event.target.value)}
-                />
-                <div className="composer-icons">
-                  <button className="icon-button" type="button" aria-label="Attach">
-                    <AttachIcon />
-                  </button>
-                  <button className="icon-button" type="button" aria-label="Voice">
-                    <MicrophoneIcon />
-                  </button>
+              <div className="composer-input-wrap">
+                <div className="composer-input">
+                  <BaseInput
+                    ref={composerInputRef}
+                    placeholder="Ask Claude Code anything, @ to add files, / for commands"
+                    value={composerValue}
+                    onChange={async (event) => {
+                      const nextValue = event.target.value;
+                      const cursor = event.target.selectionStart ?? nextValue.length;
+                      setComposerValue(nextValue);
+                      setComposerFeedback(null);
+                      await refreshComposerSuggestions(nextValue, cursor);
+                    }}
+                    onClick={async (event) => {
+                      await refreshComposerSuggestions(
+                        event.currentTarget.value,
+                        event.currentTarget.selectionStart ?? event.currentTarget.value.length
+                      );
+                    }}
+                    onKeyDown={async (event) => {
+                      const isComposing = (event.nativeEvent as KeyboardEvent).isComposing;
+                      if (isComposing) return;
+
+                      if (composerSuggestions.length > 0) {
+                        if (event.key === 'ArrowDown') {
+                          event.preventDefault();
+                          setActiveComposerSuggestion((index) => (index + 1) % composerSuggestions.length);
+                          return;
+                        }
+                        if (event.key === 'ArrowUp') {
+                          event.preventDefault();
+                          setActiveComposerSuggestion(
+                            (index) => (index - 1 + composerSuggestions.length) % composerSuggestions.length
+                          );
+                          return;
+                        }
+                        if (event.key === 'Escape') {
+                          event.preventDefault();
+                          closeComposerSuggestions();
+                          return;
+                        }
+                        if (event.key === 'Tab' || event.key === 'Enter') {
+                          event.preventDefault();
+                          const suggestion = composerSuggestions[activeComposerSuggestion];
+                          if (suggestion) {
+                            applyComposerSuggestion(suggestion);
+                          }
+                          return;
+                        }
+                      }
+
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        await submitComposer();
+                      }
+                    }}
+                  />
+                  <div className="composer-icons">
+                    <BaseButton className="icon-button" type="button" aria-label="Attach">
+                      <AttachIcon />
+                    </BaseButton>
+                    <BaseButton className="icon-button" type="button" aria-label="Voice">
+                      <MicrophoneIcon />
+                    </BaseButton>
+                  </div>
                 </div>
+                {composerSuggestions.length > 0 ? (
+                  <div className="composer-suggestions" role="listbox" aria-label="Composer suggestions">
+                    {composerSuggestions.map((suggestion, index) => (
+                      <BaseButton
+                        key={suggestion.kind === 'command' ? suggestion.name : suggestion.id}
+                        className={index === activeComposerSuggestion ? 'composer-suggestion active' : 'composer-suggestion'}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          applyComposerSuggestion(suggestion);
+                        }}
+                        type="button"
+                      >
+                        <span className="composer-suggestion-primary">
+                          {suggestion.kind === 'command' ? `/${suggestion.name}` : `@${suggestion.display}`}
+                        </span>
+                        <span className="composer-suggestion-secondary">
+                          {suggestion.kind === 'command' ? suggestion.description : suggestion.relativePath}
+                        </span>
+                      </BaseButton>
+                    ))}
+                  </div>
+                ) : null}
               </div>
+              {composerFeedback ? (
+                <div className={composerFeedback.tone === 'error' ? 'composer-feedback error' : 'composer-feedback'}>
+                  {composerFeedback.text}
+                </div>
+              ) : null}
               <div className="composer-controls">
                 <div className="composer-left">
-                  <button className="plus-button" type="button" aria-label="Add">
+                  <BaseButton className="plus-button" type="button" aria-label="Add">
                     <PlusIcon />
-                  </button>
-                  <button className="model-button" type="button">
-                    GPT-5.2-Codex High
+                  </BaseButton>
+                  <BaseButton className="model-button" type="button">
+                    {modelLabel}
                     <ChevronDownIcon />
-                  </button>
+                  </BaseButton>
                 </div>
-                <button className="send-button" type="button" aria-label="Send">
+                <BaseButton
+                  className="send-button"
+                  type="button"
+                  aria-label="Send"
+                  onClick={submitComposer}
+                  disabled={composerBusy || !composerValue.trim()}
+                >
                   <SendIcon />
-                </button>
+                </BaseButton>
               </div>
               <div className="status-bar">
                 <div className="status-left">
@@ -290,20 +540,20 @@ export default function App() {
 
           <aside className="right-panel">
             <div className="panel-tabs">
-              <button
+              <BaseButton
                 className={changesView === 'unstaged' ? 'panel-tab active' : 'panel-tab'}
                 onClick={() => setChangesView('unstaged')}
                 type="button"
               >
                 Unstaged ({unstagedFiles.length})
-              </button>
-              <button
+              </BaseButton>
+              <BaseButton
                 className={changesView === 'staged' ? 'panel-tab active' : 'panel-tab'}
                 onClick={() => setChangesView('staged')}
                 type="button"
               >
                 Staged ({stagedFiles.length})
-              </button>
+              </BaseButton>
             </div>
             {currentFiles.length === 0 ? (
               <div className="panel-empty">

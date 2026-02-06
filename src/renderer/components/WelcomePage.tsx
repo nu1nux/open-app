@@ -6,6 +6,7 @@
 import type { WorkspaceEntry } from '../types';
 import { useWorkspaceStore } from '../stores';
 import { FolderIcon } from '../icons';
+import { Button as BaseButton } from '@base-ui/react/button';
 
 /**
  * Props for the WelcomePage component.
@@ -26,17 +27,17 @@ export function WelcomePage({ recentWorkspaces }: Props) {
       <div className="welcome-content">
         <h1 className="welcome-title">Let's get started</h1>
 
-        <button className="welcome-pick-button" onClick={() => pick()} type="button">
+        <BaseButton className="welcome-pick-button" onClick={() => pick()} type="button">
           <FolderIcon />
           <span>Select a project folder</span>
-        </button>
+        </BaseButton>
 
         {recentWorkspaces.length > 0 && (
           <div className="welcome-recent">
             <h2 className="welcome-recent-title">Recent projects</h2>
             <div className="welcome-recent-list">
               {recentWorkspaces.map((ws) => (
-                <button
+                <BaseButton
                   key={ws.id}
                   className="welcome-recent-item"
                   onClick={() => setCurrent(ws.id)}
@@ -44,7 +45,7 @@ export function WelcomePage({ recentWorkspaces }: Props) {
                 >
                   <span className="welcome-recent-name">{ws.name}</span>
                   <span className="welcome-recent-path">{ws.path}</span>
-                </button>
+                </BaseButton>
               ))}
             </div>
           </div>

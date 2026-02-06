@@ -25,6 +25,9 @@ import { getDiff, getDiffForFile } from '../diff';
 import { emitAppEvent, onAppEvent, type AppEvent } from '../events';
 import { startWatchers, stopWatchers } from '../watchers';
 import { listThreads, createThread, renameThread, removeThread } from '../thread';
+import { prepareComposer, suggestComposer, getWorkspacePathById } from '../composer';
+import { executeComposerRequest } from '../providers';
+import type { ComposerPrepareInput, ComposerSuggestInput } from '../../shared/composer';
 
 /** Flag to track if event listeners have been bound */
 let eventsBound = false;
@@ -181,6 +184,53 @@ export function registerIpc() {
 
   ipcMain.handle('thread:remove', async (_event, id: string) => {
     return removeThread(id);
+  });
+
+  ipcMain.handle('composer:suggest', async (_event, input: ComposerSuggestInput) => {
+    return suggestComposer(input);
+  });
+
+  ipcMain.handle('composer:prepare', async (_event, input: ComposerPrepareInput) => {
+    return prepareComposer(input);
+  });
+
+  ipcMain.handle('composer:execute', async (_event, input: ComposerPrepareInput) => {
+    const parseResult = await prepareComposer(input);
+    if (parseResult.blocking) {
+      return {
+        ok: false,
+        provider: 'local',
+        action: 'none',
+        diagnostics: parseResult.diagnostics
+      };
+    }
+
+    const workspacePath = await getWorkspacePathById(input.workspaceId);
+    if (!workspacePath) {
+      return {
+        ok: false,
+        provider: 'local',
+        action: 'none',
+        diagnostics: [
+          {
+            code: 'PARSE_SYNTAX',
+            severity: 'error',
+            message: 'No active workspace found.',
+            start: 0,
+            end: input.rawInput.length,
+            blocking: true
+          }
+        ]
+      };
+    }
+
+    return executeComposerRequest({
+      workspaceId: input.workspaceId,
+      workspacePath,
+      threadId: input.threadId,
+      parseResult,
+      modelOverride: input.modelOverride
+    });
   });
 
   refreshWatchers().catch(() => {});

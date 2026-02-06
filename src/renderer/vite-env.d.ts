@@ -86,6 +86,128 @@ type Thread = {
 };
 
 /**
+ * Supported slash command names.
+ */
+type CommandName =
+  | 'help'
+  | 'clear'
+  | 'model'
+  | 'compact'
+  | 'review'
+  | 'plan'
+  | 'status'
+  | 'diff'
+  | 'test';
+
+/**
+ * Composer diagnostic code values.
+ */
+type ComposerDiagnosticCode =
+  | 'CMD_UNKNOWN'
+  | 'CMD_INVALID_ARGS'
+  | 'CMD_UNSUPPORTED_FLAG'
+  | 'MENTION_UNRESOLVED'
+  | 'MENTION_OUTSIDE_WORKSPACE'
+  | 'PARSE_SYNTAX'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'PROVIDER_AUTH_REQUIRED';
+
+/**
+ * Command invocation structure.
+ */
+type CommandInvocation = {
+  name: CommandName;
+  args: string[];
+  raw: string;
+  start: number;
+  end: number;
+};
+
+/**
+ * Mention reference structure.
+ */
+type MentionRef = {
+  id: string;
+  type: 'file';
+  workspaceId: string;
+  absolutePath: string;
+  relativePath: string;
+  display: string;
+};
+
+/**
+ * Composer diagnostics payload.
+ */
+type ComposerDiagnostic = {
+  code: ComposerDiagnosticCode;
+  severity: 'error' | 'warning';
+  message: string;
+  start: number;
+  end: number;
+  blocking: boolean;
+};
+
+/**
+ * Authoritative parse payload.
+ */
+type ComposerParseResult = {
+  rawInput: string;
+  command: CommandInvocation | null;
+  mentions: MentionRef[];
+  normalizedPrompt: string;
+  diagnostics: ComposerDiagnostic[];
+  blocking: boolean;
+};
+
+/**
+ * Slash command suggestion entry.
+ */
+type CommandSuggestion = {
+  kind: 'command';
+  name: CommandName;
+  syntax: string;
+  description: string;
+};
+
+/**
+ * Mention suggestion entry.
+ */
+type MentionSuggestion = {
+  kind: 'mention';
+  id: string;
+  display: string;
+  value: string;
+  absolutePath: string;
+  relativePath: string;
+};
+
+/**
+ * Unified suggestion entry.
+ */
+type ComposerSuggestion = CommandSuggestion | MentionSuggestion;
+
+/**
+ * Suggestion response payload.
+ */
+type ComposerSuggestResult = {
+  context: 'none' | 'command' | 'mention';
+  query: string;
+  suggestions: ComposerSuggestion[];
+};
+
+/**
+ * Execution response payload.
+ */
+type ComposerExecutionResult = {
+  ok: boolean;
+  provider: 'local' | 'claude-code';
+  output?: string;
+  action?: 'none' | 'clear';
+  modelOverride?: string;
+  diagnostics?: ComposerDiagnostic[];
+};
+
+/**
  * Application event types for IPC communication.
  */
 type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed';
@@ -132,6 +254,30 @@ declare global {
         create: (workspaceId: string, title: string) => Promise<Thread>;
         rename: (id: string, title: string) => Promise<Thread | null>;
         remove: (id: string) => Promise<boolean>;
+      };
+      composer: {
+        suggest: (input: {
+          rawInput: string;
+          cursor: number;
+          workspaceId: string;
+          threadId: string | null;
+        }) => Promise<ComposerSuggestResult>;
+        prepare: (input: {
+          rawInput: string;
+          cursor: number;
+          workspaceId: string;
+          threadId: string | null;
+          selectedMentionIds?: string[];
+          modelOverride?: string;
+        }) => Promise<ComposerParseResult>;
+        execute: (input: {
+          rawInput: string;
+          cursor: number;
+          workspaceId: string;
+          threadId: string | null;
+          selectedMentionIds?: string[];
+          modelOverride?: string;
+        }) => Promise<ComposerExecutionResult>;
       };
       events: {
         on: (channel: AppEvent, handler: () => void) => () => void;

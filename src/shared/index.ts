@@ -4,8 +4,9 @@
  * @module shared
  */
 
-export * from "./workspace";
-export * from "./todos";
-export * from "./scripts";
-export * from "./checkpoints";
-export * from "./thread";
+export * from './workspace';
+export * from './todos';
+export * from './scripts';
+export * from './checkpoints';
+export * from './thread';
+export * from './composer';

@@ -4,6 +4,7 @@
  */
 
 import type { GitFileStatus } from '../types';
+import { Button as BaseButton } from '@base-ui/react/button';
 
 /**
  * Props for the FileList component.
@@ -49,7 +50,7 @@ export function FileList({ files, onFileClick }: Props) {
   return (
     <div className="file-list">
       {files.map((file) => (
-        <button
+        <BaseButton
           key={file.path}
           className="file-item"
           onClick={() => onFileClick?.(file)}
@@ -59,7 +60,7 @@ export function FileList({ files, onFileClick }: Props) {
             {getStatusLabel(file.status)}
           </span>
           <span className="file-path">{file.path}</span>
-        </button>
+        </BaseButton>
       ))}
     </div>
   );
