@@ -379,8 +379,11 @@ export default function App() {
                 <div className="composer-input">
                   <BaseInput
                     ref={composerInputRef}
-                    placeholder={workspace ? 'Ask Claude Code anything, @ to add files, / for commands' : 'Select a project to start chatting'}
-                    disabled={!workspace}
+                    placeholder={
+                      workspace
+                        ? 'Ask Claude Code anything, @ to add files, / for commands'
+                        : 'Type your message. Select a project to send.'
+                    }
                     value={composerValue}
                     onChange={async (event) => {
                       const nextValue = event.target.value;
@@ -398,6 +401,12 @@ export default function App() {
                     onKeyDown={async (event) => {
                       const isComposing = (event.nativeEvent as KeyboardEvent).isComposing;
                       if (isComposing) return;
+
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        await submitComposer();
+                        return;
+                      }
 
                       if (composerSuggestions.length > 0) {
                         if (event.key === 'ArrowDown') {
@@ -417,7 +426,7 @@ export default function App() {
                           closeComposerSuggestions();
                           return;
                         }
-                        if (event.key === 'Tab' || event.key === 'Enter') {
+                        if (event.key === 'Tab') {
                           event.preventDefault();
                           const suggestion = composerSuggestions[activeComposerSuggestion];
                           if (suggestion) {
@@ -426,13 +435,17 @@ export default function App() {
                           return;
                         }
                       }
-
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        await submitComposer();
-                      }
                     }}
                   />
+                  <BaseButton
+                    className="send-button"
+                    type="button"
+                    aria-label="Send"
+                    onClick={submitComposer}
+                    disabled={!workspace || composerBusy || !composerValue.trim()}
+                  >
+                    <SendIcon />
+                  </BaseButton>
                 </div>
                 {composerSuggestions.length > 0 ? (
                   <div className="composer-suggestions" role="listbox" aria-label="Composer suggestions">
@@ -462,17 +475,6 @@ export default function App() {
                   {composerFeedback.text}
                 </div>
               ) : null}
-              <div className="composer-controls">
-                <BaseButton
-                  className="send-button"
-                  type="button"
-                  aria-label="Send"
-                  onClick={submitComposer}
-                  disabled={!workspace || composerBusy || !composerValue.trim()}
-                >
-                  <SendIcon />
-                </BaseButton>
-              </div>
             </div>
           </section>
 

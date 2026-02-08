@@ -362,6 +362,7 @@ button:focus-visible {
 
 .composer-input input {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
   color: #e0e0e0;
@@ -373,15 +374,10 @@ button:focus-visible {
   color: #7f7f7f;
 }
 
-.composer-controls {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
 .send-button {
   width: 34px;
   height: 34px;
+  flex-shrink: 0;
   border-radius: 50%;
   background: #2a2a2a;
   border: 1px solid #3a3a3a;
@@ -398,6 +394,7 @@ button:focus-visible {
 .send-button svg {
   width: 16px;
   height: 16px;
+  transform: rotate(90deg);
   stroke: #dcdcdc;
   fill: none;
   stroke-width: 1.6;

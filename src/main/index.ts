@@ -178,7 +178,7 @@ async function createStartupWindows() {
   if (!window.isDestroyed()) {
     window.show();
     if (isDev) {
-      window.webContents.openDevTools({ mode: 'detach' });
+      window.webContents.openDevTools({ mode: 'right' });
     }
   }
 }
