@@ -3,6 +3,4 @@
  * @module renderer/components
  */
 
-export { WelcomePage } from './WelcomePage';
 export { FileList } from './FileList';
-export { SplashScreen } from './SplashScreen';

@@ -4,14 +4,12 @@
  */
 
 import type { GitFileStatus } from '../types';
-import { Button as BaseButton } from '@base-ui/react/button';
 
 /**
  * Props for the FileList component.
  */
 type Props = {
   files: GitFileStatus[];
-  onFileClick?: (file: GitFileStatus) => void;
 };
 
 /**
@@ -42,7 +40,7 @@ function getStatusClass(status: string): string {
  * File list component that displays git file statuses.
  * Shows file path and status badge with color coding.
  */
-export function FileList({ files, onFileClick }: Props) {
+export function FileList({ files }: Props) {
   if (files.length === 0) {
     return null;
   }
@@ -50,17 +48,12 @@ export function FileList({ files, onFileClick }: Props) {
   return (
     <div className="file-list">
       {files.map((file) => (
-        <BaseButton
-          key={file.path}
-          className="file-item"
-          onClick={() => onFileClick?.(file)}
-          type="button"
-        >
+        <div key={file.path} className="file-item">
           <span className={`file-status ${getStatusClass(file.status)}`}>
             {getStatusLabel(file.status)}
           </span>
           <span className="file-path">{file.path}</span>
-        </BaseButton>
+        </div>
       ))}
     </div>
   );

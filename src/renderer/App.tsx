@@ -5,47 +5,18 @@
  */
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import type { ReactNode } from 'react';
 import { useWorkspaceStore, useGitStore, useThreadStore, useDeleteStore } from './stores';
 import { useInitApp } from './hooks/useInitApp';
-import { FileList, SplashScreen } from './components';
+import { FileList } from './components';
 import type { ComposerSuggestion } from './types';
 import { Button as BaseButton } from '@base-ui/react/button';
 import { Input as BaseInput } from '@base-ui/react/input';
 import {
   NewThreadIcon,
-  AutomationsIcon,
-  SkillsIcon,
-  PlusIcon,
-  FilterIcon,
   FolderIcon,
-  SettingsIcon,
-  ChevronDownIcon,
-  UndoIcon,
-  ListIcon,
-  WindowIcon,
-  ShareIcon,
-  AttachIcon,
-  MicrophoneIcon,
   SendIcon,
   TrashIcon
 } from './icons';
-
-/**
- * Navigation item configuration.
- */
-type NavItem = {
-  id: string;
-  label: string;
-  icon: ReactNode;
-};
-
-/** Navigation items for the sidebar */
-const navItems: NavItem[] = [
-  { id: 'new-thread', label: 'New thread', icon: <NewThreadIcon /> },
-  { id: 'automations', label: 'Automations', icon: <AutomationsIcon /> },
-  { id: 'skills', label: 'Skills', icon: <SkillsIcon /> }
-];
 
 /**
  * Formats a timestamp into a relative time string.
@@ -72,19 +43,16 @@ export default function App() {
   useInitApp();
 
   const { current: workspace, list: workspaces, pick, setCurrent } = useWorkspaceStore();
-  const { summary: gitSummary, files: gitFiles } = useGitStore();
+  const { files: gitFiles } = useGitStore();
   const { threads, activeId: activeThread, setActive: setActiveThread, createThread } = useThreadStore();
   const { pending: pendingDeletes, requestThreadDelete, requestWorkspaceDelete, undoDelete } = useDeleteStore();
 
-  const [showSplash, setShowSplash] = useState(true);
-  const [activeNav, setActiveNav] = useState('new-thread');
   const [changesView, setChangesView] = useState<'unstaged' | 'staged'>('staged');
   const [composerValue, setComposerValue] = useState('');
   const [composerSuggestions, setComposerSuggestions] = useState<ComposerSuggestion[]>([]);
   const [activeComposerSuggestion, setActiveComposerSuggestion] = useState(0);
   const [selectedMentionIds, setSelectedMentionIds] = useState<string[]>([]);
   const [composerBusy, setComposerBusy] = useState(false);
-  const [modelLabel, setModelLabel] = useState('Claude Code');
   const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
   const [deleteNow, setDeleteNow] = useState(() => Date.now());
   const [composerFeedback, setComposerFeedback] = useState<{
@@ -254,7 +222,6 @@ export default function App() {
       }
 
       if (result.modelOverride) {
-        setModelLabel(result.modelOverride);
         setModelOverride(result.modelOverride);
       }
 
@@ -288,39 +255,27 @@ export default function App() {
       <aside className="sidebar">
         <div className="sidebar-top">
           <nav className="sidebar-nav">
-            {navItems.map((item) => (
-              <BaseButton
-                key={item.id}
-                className={activeNav === item.id ? 'nav-item active' : 'nav-item'}
-                onClick={() => {
-                  setActiveNav(item.id);
-                  if (item.id === 'new-thread') {
-                    if (workspace) {
-                      createThread(workspace.id, 'New thread');
-                    } else {
-                      void pick();
-                    }
-                  }
-                }}
-                type="button"
-              >
-                <span className="nav-icon">{item.icon}</span>
-                <span>{item.label}</span>
-              </BaseButton>
-            ))}
+            <BaseButton
+              className="nav-item active"
+              onClick={() => {
+                if (workspace) {
+                  createThread(workspace.id, 'New thread');
+                } else {
+                  void pick();
+                }
+              }}
+              type="button"
+            >
+              <span className="nav-icon">
+                <NewThreadIcon />
+              </span>
+              <span>New thread</span>
+            </BaseButton>
           </nav>
 
           <div className="sidebar-section">
             <div className="section-header">
               <span className="section-title">Threads</span>
-              <div className="section-actions">
-                <BaseButton className="icon-button" type="button" aria-label="Create thread">
-                  <PlusIcon />
-                </BaseButton>
-                <BaseButton className="icon-button" type="button" aria-label="Filter threads">
-                  <FilterIcon />
-                </BaseButton>
-              </div>
             </div>
 
             {workspace ? (
@@ -407,43 +362,9 @@ export default function App() {
             )}
           </div>
         </div>
-
-        <div className="sidebar-bottom">
-          <BaseButton className="nav-item" type="button">
-            <span className="nav-icon">
-              <SettingsIcon />
-            </span>
-            <span>Settings</span>
-          </BaseButton>
-        </div>
       </aside>
 
       <div className="main-area">
-        <header className="topbar">
-          <div className="topbar-actions">
-            <BaseButton className="pill-button" type="button">
-              <span className="pill-icon">
-                <UndoIcon />
-              </span>
-              Open
-              <ChevronDownIcon />
-            </BaseButton>
-            <BaseButton className="pill-button" type="button">
-              <span className="pill-icon">
-                <ListIcon />
-              </span>
-              Commit
-              <ChevronDownIcon />
-            </BaseButton>
-            <BaseButton className="icon-button" type="button" aria-label="View mode">
-              <WindowIcon />
-            </BaseButton>
-            <BaseButton className="icon-button" type="button" aria-label="Share">
-              <ShareIcon />
-            </BaseButton>
-          </div>
-        </header>
-
         <div className="content">
           <section className="center-panel">
             <div className="hero-block">
@@ -512,14 +433,6 @@ export default function App() {
                       }
                     }}
                   />
-                  <div className="composer-icons">
-                    <BaseButton className="icon-button" type="button" aria-label="Attach">
-                      <AttachIcon />
-                    </BaseButton>
-                    <BaseButton className="icon-button" type="button" aria-label="Voice">
-                      <MicrophoneIcon />
-                    </BaseButton>
-                  </div>
                 </div>
                 {composerSuggestions.length > 0 ? (
                   <div className="composer-suggestions" role="listbox" aria-label="Composer suggestions">
@@ -550,12 +463,6 @@ export default function App() {
                 </div>
               ) : null}
               <div className="composer-controls">
-                <div className="composer-left">
-                  <BaseButton className="model-button" type="button">
-                    {modelLabel}
-                    <ChevronDownIcon />
-                  </BaseButton>
-                </div>
                 <BaseButton
                   className="send-button"
                   type="button"
@@ -565,16 +472,6 @@ export default function App() {
                 >
                   <SendIcon />
                 </BaseButton>
-              </div>
-              <div className="status-bar">
-                <div className="status-left">
-                  <span className="status-chip active">Local</span>
-                  <span className="status-chip">Worktree</span>
-                </div>
-                <div className="status-right">
-                  <span className="status-dot" />
-                  <span>{gitSummary?.branch ?? 'main'}</span>
-                </div>
               </div>
             </div>
           </section>
@@ -607,7 +504,6 @@ export default function App() {
           </aside>
         </div>
       </div>
-      {showSplash ? <SplashScreen onDone={() => setShowSplash(false)} /> : null}
       {pendingDeletes.length > 0 ? (
         <div className="delete-toast-stack">
           {pendingDeletes.map((action) => {
