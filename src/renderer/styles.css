@@ -18,27 +18,16 @@
   --topbar-height: 56px;
 }
 
-/* Splash Screen */
-@keyframes splash-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+/* Splash Screen — typewriter animation */
+@keyframes splash-cursor-blink {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
-@keyframes splash-out {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(1.02);
-  }
+@keyframes splash-flourish {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 
 .splash-screen {
@@ -49,14 +38,38 @@
   justify-content: center;
   background: var(--shell-bg);
   z-index: 9999;
-  animation: splash-in 300ms ease-out forwards, splash-out 300ms ease-in 400ms forwards;
 }
 
-.splash-logo {
+.splash-typewriter {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.splash-typewriter.splash-flourish {
+  animation: splash-flourish 300ms ease-out;
+}
+
+.splash-text {
   font-size: 36px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--text);
+  display: inline-flex;
+}
+
+.splash-letter {
+  display: inline-block;
+  opacity: 0;
+}
+
+.splash-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 36px;
+  background: var(--text);
+  margin-left: 2px;
+  animation: splash-cursor-blink 530ms step-end infinite alternate;
 }
 
 * {
@@ -327,6 +340,26 @@ button:focus-visible {
   opacity: 1;
 }
 
+.project-picker-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text);
+  transition: background 120ms ease;
+}
+
+.project-picker-button:hover {
+  background: #1a1a1a;
+}
+
+.composer-input input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .sidebar-bottom {
   padding-top: 10px;
   border-top: 1px solid var(--border);
@@ -339,29 +372,11 @@ button:focus-visible {
 }
 
 .topbar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
   padding: 0 22px;
   border-bottom: 1px solid var(--border);
-}
-
-.topbar-center {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.topbar-center svg {
-  width: 12px;
-  height: 12px;
-  stroke: var(--muted);
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .topbar-actions {
@@ -454,87 +469,6 @@ button:focus-visible {
   letter-spacing: -0.02em;
 }
 
-.hero-subtitle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 18px;
-  color: var(--muted);
-}
-
-.hero-subtitle svg {
-  width: 12px;
-  height: 12px;
-  stroke: var(--muted);
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.suggestions {
-  display: grid;
-  gap: 10px;
-  margin-top: 26px;
-}
-
-.suggestions-label {
-  font-size: 12px;
-  color: var(--muted-2);
-  text-align: center;
-}
-
-.suggestions-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.suggestion-card {
-  background: var(--panel-raised);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px;
-  display: grid;
-  gap: 10px;
-  text-align: left;
-  min-height: 84px;
-  transition: border 120ms ease, background 120ms ease;
-}
-
-.suggestion-card:hover {
-  background: #202020;
-  border-color: var(--border-strong);
-}
-
-.suggestion-icon {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: #222222;
-  border: 1px solid var(--border);
-}
-
-.suggestion-icon svg {
-  width: 14px;
-  height: 14px;
-  stroke: #cfcfcf;
-  fill: none;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.suggestion-text {
-  font-size: 12.5px;
-  color: #d6d6d6;
-  line-height: 1.35;
-  white-space: pre-line;
-}
-
 .composer {
   display: grid;
   gap: 10px;
@@ -583,27 +517,6 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.plus-button {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: var(--panel-soft);
-  border: 1px solid var(--border);
-}
-
-.plus-button svg {
-  width: 14px;
-  height: 14px;
-  stroke: #bdbdbd;
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .model-button {
@@ -1029,19 +942,11 @@ button:focus-visible {
   .content {
     grid-template-columns: 1fr;
   }
-
-  .suggestions-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 720px) {
   .center-panel {
     padding: 24px;
-  }
-
-  .suggestions-grid {
-    grid-template-columns: 1fr;
   }
 
   .topbar-actions {

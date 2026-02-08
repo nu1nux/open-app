@@ -8,7 +8,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useWorkspaceStore, useGitStore, useThreadStore, useDeleteStore } from './stores';
 import { useInitApp } from './hooks/useInitApp';
-import { WelcomePage, FileList } from './components';
+import { FileList, SplashScreen } from './components';
 import type { ComposerSuggestion } from './types';
 import { Button as BaseButton } from '@base-ui/react/button';
 import { Input as BaseInput } from '@base-ui/react/input';
@@ -25,9 +25,6 @@ import {
   ListIcon,
   WindowIcon,
   ShareIcon,
-  GamepadIcon,
-  MagicWandIcon,
-  DocumentIcon,
   AttachIcon,
   MicrophoneIcon,
   SendIcon,
@@ -48,13 +45,6 @@ const navItems: NavItem[] = [
   { id: 'new-thread', label: 'New thread', icon: <NewThreadIcon /> },
   { id: 'automations', label: 'Automations', icon: <AutomationsIcon /> },
   { id: 'skills', label: 'Skills', icon: <SkillsIcon /> }
-];
-
-/** Suggestion cards displayed in the hero section */
-const suggestionCards = [
-  { id: 'card-1', icon: <GamepadIcon />, title: 'Build a classic Snake\ngame in this repo.' },
-  { id: 'card-2', icon: <MagicWandIcon />, title: 'Create a one-page\n$pdf that summarizes\nthis app.' },
-  { id: 'card-3', icon: <DocumentIcon />, title: "Summarize last week's\nPRs by teammate and\ntheme." }
 ];
 
 /**
@@ -81,11 +71,12 @@ function formatRelativeTime(timestamp: number): string {
 export default function App() {
   useInitApp();
 
-  const { current: workspace, list: workspaces } = useWorkspaceStore();
+  const { current: workspace, list: workspaces, pick, setCurrent } = useWorkspaceStore();
   const { summary: gitSummary, files: gitFiles } = useGitStore();
   const { threads, activeId: activeThread, setActive: setActiveThread, createThread } = useThreadStore();
   const { pending: pendingDeletes, requestThreadDelete, requestWorkspaceDelete, undoDelete } = useDeleteStore();
 
+  const [showSplash, setShowSplash] = useState(true);
   const [activeNav, setActiveNav] = useState('new-thread');
   const [changesView, setChangesView] = useState<'unstaged' | 'staged'>('staged');
   const [composerValue, setComposerValue] = useState('');
@@ -292,10 +283,6 @@ export default function App() {
     }
   };
 
-  if (!workspace) {
-    return <WelcomePage recentWorkspaces={workspaces} />;
-  }
-
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -307,8 +294,12 @@ export default function App() {
                 className={activeNav === item.id ? 'nav-item active' : 'nav-item'}
                 onClick={() => {
                   setActiveNav(item.id);
-                  if (item.id === 'new-thread' && workspace) {
-                    createThread(workspace.id, 'New thread');
+                  if (item.id === 'new-thread') {
+                    if (workspace) {
+                      createThread(workspace.id, 'New thread');
+                    } else {
+                      void pick();
+                    }
                   }
                 }}
                 type="button"
@@ -332,52 +323,88 @@ export default function App() {
               </div>
             </div>
 
-            <div className="thread-group">
-              <div className="group-title">
-                <div className="group-title-main">
+            {workspace ? (
+              <div className="thread-group">
+                <div className="group-title">
+                  <div className="group-title-main">
+                    <span className="group-icon">
+                      <FolderIcon />
+                    </span>
+                    <span>{workspace.name}</span>
+                  </div>
+                  <BaseButton
+                    className="thread-item-delete project-delete"
+                    type="button"
+                    aria-label="Remove project"
+                    onClick={deleteWorkspaceWithConfirm}
+                  >
+                    <TrashIcon />
+                  </BaseButton>
+                </div>
+                {threads.length === 0 ? (
+                  <div className="group-empty">No threads</div>
+                ) : (
+                  <div className="thread-list">
+                    {threads.map((thread) => (
+                      <div key={thread.id} className="thread-row">
+                        <BaseButton
+                          className={activeThread === thread.id ? 'thread-item active' : 'thread-item'}
+                          onClick={() => setActiveThread(thread.id)}
+                          type="button"
+                        >
+                          <span className="thread-title">{thread.title}</span>
+                          <span className="thread-time">
+                            {formatRelativeTime(thread.updatedAt)}
+                          </span>
+                        </BaseButton>
+                        <BaseButton
+                          className="thread-item-delete"
+                          type="button"
+                          aria-label={`Delete thread ${thread.title}`}
+                          onClick={() => void deleteThreadWithConfirm(thread.id)}
+                        >
+                          <TrashIcon />
+                        </BaseButton>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="thread-group">
+                <BaseButton
+                  className="project-picker-button"
+                  type="button"
+                  onClick={() => void pick()}
+                >
                   <span className="group-icon">
                     <FolderIcon />
                   </span>
-                  <span>{workspace.name}</span>
-                </div>
-                <BaseButton
-                  className="thread-item-delete project-delete"
-                  type="button"
-                  aria-label="Remove project"
-                  onClick={deleteWorkspaceWithConfirm}
-                >
-                  <TrashIcon />
+                  Select a project
                 </BaseButton>
-              </div>
-              {threads.length === 0 ? (
-                <div className="group-empty">No threads</div>
-              ) : (
-                <div className="thread-list">
-                  {threads.map((thread) => (
-                    <div key={thread.id} className="thread-row">
-                      <BaseButton
-                        className={activeThread === thread.id ? 'thread-item active' : 'thread-item'}
-                        onClick={() => setActiveThread(thread.id)}
-                        type="button"
-                      >
-                        <span className="thread-title">{thread.title}</span>
-                        <span className="thread-time">
-                          {formatRelativeTime(thread.updatedAt)}
-                        </span>
-                      </BaseButton>
-                      <BaseButton
-                        className="thread-item-delete"
-                        type="button"
-                        aria-label={`Delete thread ${thread.title}`}
-                        onClick={() => void deleteThreadWithConfirm(thread.id)}
-                      >
-                        <TrashIcon />
-                      </BaseButton>
+                {workspaces.length > 0 ? (
+                  <>
+                    <div className="group-title">
+                      <span>Recent projects</span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    <div className="thread-list">
+                      {workspaces.map((ws) => (
+                        <BaseButton
+                          key={ws.id}
+                          className="thread-item"
+                          type="button"
+                          onClick={() => void setCurrent(ws.id)}
+                        >
+                          <span className="thread-title">{ws.name}</span>
+                        </BaseButton>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="group-empty">No project selected</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -393,11 +420,6 @@ export default function App() {
 
       <div className="main-area">
         <header className="topbar">
-          <div className="topbar-left" />
-          <BaseButton className="topbar-center" type="button">
-            Uncommitted changes
-            <ChevronDownIcon />
-          </BaseButton>
           <div className="topbar-actions">
             <BaseButton className="pill-button" type="button">
               <span className="pill-icon">
@@ -429,22 +451,6 @@ export default function App() {
                 <span className="hero-dot" />
               </div>
               <h1 className="hero-title">Let&apos;s build</h1>
-              <BaseButton className="hero-subtitle" type="button">
-                open-app
-                <ChevronDownIcon />
-              </BaseButton>
-            </div>
-
-            <div className="suggestions">
-              <span className="suggestions-label">Explore more</span>
-              <div className="suggestions-grid">
-                {suggestionCards.map((card) => (
-                  <BaseButton key={card.id} className="suggestion-card" type="button">
-                    <span className="suggestion-icon">{card.icon}</span>
-                    <span className="suggestion-text">{card.title}</span>
-                  </BaseButton>
-                ))}
-              </div>
             </div>
 
             <div className="composer">
@@ -452,7 +458,8 @@ export default function App() {
                 <div className="composer-input">
                   <BaseInput
                     ref={composerInputRef}
-                    placeholder="Ask Claude Code anything, @ to add files, / for commands"
+                    placeholder={workspace ? 'Ask Claude Code anything, @ to add files, / for commands' : 'Select a project to start chatting'}
+                    disabled={!workspace}
                     value={composerValue}
                     onChange={async (event) => {
                       const nextValue = event.target.value;
@@ -544,9 +551,6 @@ export default function App() {
               ) : null}
               <div className="composer-controls">
                 <div className="composer-left">
-                  <BaseButton className="plus-button" type="button" aria-label="Add">
-                    <PlusIcon />
-                  </BaseButton>
                   <BaseButton className="model-button" type="button">
                     {modelLabel}
                     <ChevronDownIcon />
@@ -557,7 +561,7 @@ export default function App() {
                   type="button"
                   aria-label="Send"
                   onClick={submitComposer}
-                  disabled={composerBusy || !composerValue.trim()}
+                  disabled={!workspace || composerBusy || !composerValue.trim()}
                 >
                   <SendIcon />
                 </BaseButton>
@@ -603,6 +607,7 @@ export default function App() {
           </aside>
         </div>
       </div>
+      {showSplash ? <SplashScreen onDone={() => setShowSplash(false)} /> : null}
       {pendingDeletes.length > 0 ? (
         <div className="delete-toast-stack">
           {pendingDeletes.map((action) => {
