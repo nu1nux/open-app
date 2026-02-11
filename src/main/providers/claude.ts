@@ -4,7 +4,11 @@
  */
 
 import { execa } from 'execa';
-import type { ClaudeExecutionRequest, ComposerExecutionResult } from '../../shared/composer';
+import type {
+  ClaudeExecutionRequest,
+  ComposerExecutionCallbacks,
+  ComposerExecutionResult
+} from '../../shared/composer';
 
 /**
  * Claude CLI JSON result shape for --output-format json.
@@ -95,7 +99,7 @@ function buildPrompt(request: ClaudeExecutionRequest): string {
 
   if (parseResult.mentions.length > 0) {
     lines.push(
-      `Referenced files:\n${parseResult.mentions.map((mention) => `- ${mention.relativePath}`).join('\n')}`
+      `Referenced files:\n${parseResult.mentions.map((mention) => `- ${mention.relativePath ?? mention.display}`).join('\n')}`
     );
   }
 
@@ -117,9 +121,13 @@ function buildPrompt(request: ClaudeExecutionRequest): string {
 /**
  * Executes a prepared request through Claude Code CLI.
  */
-export async function executeClaudeRequest(request: ClaudeExecutionRequest): Promise<ComposerExecutionResult> {
+export async function executeClaudeRequest(
+  request: ClaudeExecutionRequest,
+  callbacks?: ComposerExecutionCallbacks
+): Promise<ComposerExecutionResult> {
   const prompt = buildPrompt(request);
   if (!prompt) {
+    callbacks?.onStreamEnd?.();
     return providerUnavailable('Composer prompt is empty after normalization.');
   }
 
@@ -138,6 +146,7 @@ export async function executeClaudeRequest(request: ClaudeExecutionRequest): Pro
 
     const raw = result.stdout.trim() || result.stderr.trim();
     if (!raw) {
+      callbacks?.onStreamEnd?.();
       return providerUnavailable('Claude Code returned an empty response.');
     }
 
@@ -152,22 +161,32 @@ export async function executeClaudeRequest(request: ClaudeExecutionRequest): Pro
       const errorMessage = payload.result ?? 'Claude Code returned an error response.';
       const normalized = errorMessage.toLowerCase();
       if (normalized.includes('invalid_model')) {
+        callbacks?.onStreamEnd?.();
         return providerError('CMD_INVALID_ARGS', errorMessage);
       }
       if (normalized.includes('auth') || normalized.includes('token')) {
+        callbacks?.onStreamEnd?.();
         return providerError('PROVIDER_AUTH_REQUIRED', errorMessage);
       }
+      callbacks?.onStreamEnd?.();
       return providerUnavailable(errorMessage);
     }
+
+    const output = payload?.result ?? raw;
+    if (output) {
+      callbacks?.onStreamChunk?.(output);
+    }
+    callbacks?.onStreamEnd?.();
 
     return {
       ok: true,
       provider: 'claude-code',
-      output: payload?.result ?? raw,
+      output,
       action: 'none'
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown Claude Code execution failure.';
+    callbacks?.onStreamEnd?.();
     return providerUnavailable(`Failed to execute Claude Code CLI: ${message}`);
   }
 }

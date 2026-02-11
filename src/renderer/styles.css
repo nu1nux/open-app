@@ -413,6 +413,18 @@ button:focus-visible {
   background: #151515;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
   overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.composer-suggestion-group {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8f8f8f;
+  background: #121212;
+  border-bottom: 1px solid #222;
+  padding: 7px 12px 6px;
 }
 
 .composer-suggestion {
@@ -453,6 +465,21 @@ button:focus-visible {
 
 .composer-feedback.error {
   color: #ef8e8e;
+}
+
+.composer-stream-output {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #2a2a2a;
+  background: #141414;
+  color: #dcdcdc;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .right-panel {

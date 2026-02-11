@@ -125,7 +125,52 @@ export type CommandName =
   | 'plan'
   | 'status'
   | 'diff'
-  | 'test';
+  | 'test'
+  | 'resume'
+  | 'rewind'
+  | 'rename'
+  | 'export'
+  | 'copy'
+  | 'exit'
+  | 'context'
+  | 'memory'
+  | 'init'
+  | 'add-dir'
+  | 'todos'
+  | 'tasks'
+  | 'debug'
+  | 'config'
+  | 'permissions'
+  | 'cost'
+  | 'theme'
+  | 'vim'
+  | 'usage'
+  | 'stats'
+  | 'doctor'
+  | 'bug'
+  | 'mcp';
+
+/**
+ * Mention reference types.
+ */
+export type MentionType = 'file' | 'directory' | 'image' | 'mcp';
+
+/**
+ * Command execution routing mode.
+ */
+export type CommandHandler = 'local' | 'cli-proxy' | 'session' | 'custom';
+
+/**
+ * Command grouping category for slash palette.
+ */
+export type CommandCategory =
+  | 'session'
+  | 'context'
+  | 'workflow'
+  | 'config'
+  | 'diagnostics'
+  | 'integration'
+  | 'custom';
 
 /**
  * Composer diagnostic code values.
@@ -144,7 +189,7 @@ export type ComposerDiagnosticCode =
  * Parsed command invocation.
  */
 export type CommandInvocation = {
-  name: CommandName;
+  name: string;
   args: string[];
   raw: string;
   start: number;
@@ -156,11 +201,12 @@ export type CommandInvocation = {
  */
 export type MentionRef = {
   id: string;
-  type: 'file';
+  type: MentionType;
   workspaceId: string;
-  absolutePath: string;
-  relativePath: string;
+  absolutePath?: string;
+  relativePath?: string;
   display: string;
+  payload?: Record<string, unknown>;
 };
 
 /**
@@ -192,9 +238,11 @@ export type ComposerParseResult = {
  */
 export type CommandSuggestion = {
   kind: 'command';
-  name: CommandName;
+  name: string;
   syntax: string;
   description: string;
+  category: CommandCategory;
+  handler: CommandHandler;
 };
 
 /**
@@ -233,4 +281,19 @@ export type ComposerExecutionResult = {
   action?: 'none' | 'clear';
   modelOverride?: string;
   diagnostics?: ComposerDiagnostic[];
+};
+
+/**
+ * Streaming payload emitted during composer execution.
+ */
+export type ComposerStreamChunk = {
+  threadId: string | null;
+  chunk: string;
+};
+
+/**
+ * Streaming payload emitted when composer execution stream ends.
+ */
+export type ComposerStreamEnd = {
+  threadId: string | null;
 };

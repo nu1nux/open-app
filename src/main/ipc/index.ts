@@ -228,7 +228,7 @@ export function registerIpc() {
     return prepareComposer(input);
   });
 
-  ipcMain.handle('composer:execute', async (_event, input: ComposerPrepareInput) => {
+  ipcMain.handle('composer:execute', async (event, input: ComposerPrepareInput) => {
     const parseResult = await prepareComposer(input);
     if (parseResult.blocking) {
       return {
@@ -258,13 +258,28 @@ export function registerIpc() {
       };
     }
 
-    return executeComposerRequest({
-      workspaceId: input.workspaceId,
-      workspacePath,
-      threadId: input.threadId,
-      parseResult,
-      modelOverride: input.modelOverride
-    });
+    return executeComposerRequest(
+      {
+        workspaceId: input.workspaceId,
+        workspacePath,
+        threadId: input.threadId,
+        parseResult,
+        modelOverride: input.modelOverride
+      },
+      {
+        onStreamChunk: (chunk) => {
+          event.sender.send('composer:stream-chunk', {
+            threadId: input.threadId,
+            chunk
+          });
+        },
+        onStreamEnd: () => {
+          event.sender.send('composer:stream-end', {
+            threadId: input.threadId
+          });
+        }
+      }
+    );
   });
 
   refreshWatchers().catch(() => {});

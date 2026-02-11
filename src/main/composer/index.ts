@@ -13,8 +13,9 @@ import type {
   ComposerSuggestInput
 } from '../../shared/composer';
 import { listWorkspaces } from '../workspace';
+import { discoverSkillCommands } from '../skills';
 import { parseComposerInput } from './parser';
-import { listCommands } from './registry';
+import { listCommands, setCustomCommands } from './registry';
 import { resolveMention, suggestMentions } from './mentions';
 
 /**
@@ -36,8 +37,27 @@ function getCommandSuggestions(query: string): CommandSuggestion[] {
       kind: 'command' as const,
       name: command.name,
       syntax: command.syntax,
-      description: command.description
+      description: command.description,
+      category: command.category,
+      handler: command.handler
     }));
+}
+
+/**
+ * Refreshes custom skill commands for the active workspace.
+ */
+async function refreshCustomCommands(workspacePath: string | null): Promise<void> {
+  if (!workspacePath) {
+    setCustomCommands([]);
+    return;
+  }
+
+  try {
+    const commands = await discoverSkillCommands(workspacePath);
+    setCustomCommands(commands);
+  } catch {
+    setCustomCommands([]);
+  }
 }
 
 /**
@@ -53,12 +73,12 @@ type SuggestionContext =
  */
 function detectSuggestionContext(rawInput: string, cursor: number): SuggestionContext {
   const prefix = rawInput.slice(0, Math.max(0, Math.min(cursor, rawInput.length)));
-  const mentionMatch = prefix.match(/(?:^|\s)@([A-Za-z0-9_./-]*)$/);
+  const mentionMatch = prefix.match(/(?:^|\s)@([A-Za-z0-9_./:-]*)$/);
   if (mentionMatch) {
     return { context: 'mention', query: mentionMatch[1] };
   }
 
-  const commandMatch = prefix.match(/^\s*\/([A-Za-z0-9-]*)$/);
+  const commandMatch = prefix.match(/^\s*\/([A-Za-z0-9_-]*)$/);
   if (commandMatch) {
     return { context: 'command', query: commandMatch[1] };
   }
@@ -76,6 +96,8 @@ export async function suggestComposer(input: ComposerSuggestInput): Promise<Comp
   }
 
   if (context.context === 'command') {
+    const workspacePath = await getWorkspacePathById(input.workspaceId);
+    await refreshCustomCommands(workspacePath);
     return {
       context: 'command',
       query: context.query,
@@ -102,14 +124,14 @@ export async function suggestComposer(input: ComposerSuggestInput): Promise<Comp
 async function resolveMentions(
   workspaceId: string,
   workspacePath: string,
-  mentionQueries: Array<{ query: string; start: number; end: number }>
+  mentionQueries: Array<{ query: string; mentionType: 'file' | 'directory' | 'image' | 'mcp'; start: number; end: number }>
 ): Promise<{ mentions: MentionRef[]; diagnostics: ComposerDiagnostic[] }> {
   const diagnostics: ComposerDiagnostic[] = [];
   const mentions: MentionRef[] = [];
   const seen = new Set<string>();
 
   for (const query of mentionQueries) {
-    const result = await resolveMention(workspaceId, workspacePath, query.query);
+    const result = await resolveMention(workspaceId, workspacePath, query.query, query.mentionType);
     if (result.mention) {
       if (!seen.has(result.mention.id)) {
         seen.add(result.mention.id);
@@ -147,11 +169,13 @@ async function resolveMentions(
  * Authoritatively parses and validates a composer input submission.
  */
 export async function prepareComposer(input: ComposerPrepareInput): Promise<ComposerParseResult> {
+  const workspacePath = await getWorkspacePathById(input.workspaceId);
+  await refreshCustomCommands(workspacePath);
+
   const draft = parseComposerInput(input.rawInput);
   const diagnostics: ComposerDiagnostic[] = [...draft.diagnostics];
   let mentions: MentionRef[] = [];
 
-  const workspacePath = await getWorkspacePathById(input.workspaceId);
   if (!workspacePath) {
     diagnostics.push({
       code: 'PARSE_SYNTAX',

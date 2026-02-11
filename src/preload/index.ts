@@ -8,12 +8,25 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 /** Set of valid IPC event channels that can be subscribed to */
-const validChannels = new Set(['workspace:changed', 'git:changed', 'diff:changed', 'delete:changed']);
+const validChannels = new Set([
+  'workspace:changed',
+  'git:changed',
+  'diff:changed',
+  'delete:changed',
+  'composer:stream-chunk',
+  'composer:stream-end'
+]);
 
 /**
  * Application event types for IPC communication.
  */
-type AppEvent = 'workspace:changed' | 'git:changed' | 'diff:changed' | 'delete:changed';
+type AppEvent =
+  | 'workspace:changed'
+  | 'git:changed'
+  | 'diff:changed'
+  | 'delete:changed'
+  | 'composer:stream-chunk'
+  | 'composer:stream-end';
 
 /**
  * Exposes the openApp API to the renderer process.
@@ -86,7 +99,17 @@ contextBridge.exposeInMainWorld('openApp', {
       threadId: string | null;
       selectedMentionIds?: string[];
       modelOverride?: string;
-    }) => ipcRenderer.invoke('composer:execute', input)
+    }) => ipcRenderer.invoke('composer:execute', input),
+    onStreamChunk: (handler: (payload: { threadId: string | null; chunk: string }) => void) => {
+      const listener = (_event: unknown, payload: { threadId: string | null; chunk: string }) => handler(payload);
+      ipcRenderer.on('composer:stream-chunk', listener);
+      return () => ipcRenderer.removeListener('composer:stream-chunk', listener);
+    },
+    onStreamEnd: (handler: (payload: { threadId: string | null }) => void) => {
+      const listener = (_event: unknown, payload: { threadId: string | null }) => handler(payload);
+      ipcRenderer.on('composer:stream-end', listener);
+      return () => ipcRenderer.removeListener('composer:stream-end', listener);
+    }
   },
   events: {
     on: (channel: AppEvent, handler: () => void) => {

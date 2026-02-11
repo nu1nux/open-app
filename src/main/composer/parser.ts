@@ -12,6 +12,7 @@ import { getCommand } from './registry';
 export type MentionQuery = {
   raw: string;
   query: string;
+  mentionType: 'file' | 'directory' | 'image' | 'mcp';
   start: number;
   end: number;
 };
@@ -100,18 +101,43 @@ function isMentionBoundary(rawInput: string, atIndex: number): boolean {
 }
 
 /**
+ * Classifies mention query into a supported mention type.
+ */
+function classifyMention(query: string): 'file' | 'directory' | 'image' | 'mcp' {
+  if (query.includes(':') && !query.startsWith('./') && !query.startsWith('../')) {
+    return 'mcp';
+  }
+
+  if (query.endsWith('/')) {
+    return 'directory';
+  }
+
+  if (/\.(png|jpg|jpeg|gif|svg|webp)$/i.test(query)) {
+    return 'image';
+  }
+
+  return 'file';
+}
+
+/**
  * Extracts unresolved @mentions from raw composer text.
  */
 function parseMentionQueries(rawInput: string): MentionQuery[] {
   const mentionQueries: MentionQuery[] = [];
-  const mentionPattern = /@([A-Za-z0-9_./-]+)/g;
+  const mentionPattern = /@([A-Za-z0-9_./:-]+)/g;
 
   for (const match of rawInput.matchAll(mentionPattern)) {
     const start = match.index ?? -1;
     if (start < 0 || !isMentionBoundary(rawInput, start)) continue;
     const raw = match[0];
     const query = match[1];
-    mentionQueries.push({ raw, query, start, end: start + raw.length });
+    mentionQueries.push({
+      raw,
+      query,
+      mentionType: classifyMention(query),
+      start,
+      end: start + raw.length
+    });
   }
 
   return mentionQueries;

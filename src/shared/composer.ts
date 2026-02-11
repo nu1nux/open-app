@@ -15,13 +15,63 @@ export const commandNames = [
   'plan',
   'status',
   'diff',
-  'test'
+  'test',
+  'resume',
+  'rewind',
+  'rename',
+  'export',
+  'copy',
+  'exit',
+  'context',
+  'memory',
+  'init',
+  'add-dir',
+  'todos',
+  'tasks',
+  'debug',
+  'config',
+  'permissions',
+  'cost',
+  'theme',
+  'vim',
+  'usage',
+  'stats',
+  'doctor',
+  'bug',
+  'mcp'
 ] as const;
 
 /**
  * Slash command name union.
  */
 export type CommandName = (typeof commandNames)[number];
+
+/**
+ * Supported mention reference types.
+ */
+export const mentionTypes = ['file', 'directory', 'image', 'mcp'] as const;
+
+/**
+ * Mention type union.
+ */
+export type MentionType = (typeof mentionTypes)[number];
+
+/**
+ * Command execution routing mode.
+ */
+export type CommandHandler = 'local' | 'cli-proxy' | 'session' | 'custom';
+
+/**
+ * Command grouping category for suggestions and docs.
+ */
+export type CommandCategory =
+  | 'session'
+  | 'context'
+  | 'workflow'
+  | 'config'
+  | 'diagnostics'
+  | 'integration'
+  | 'custom';
 
 /**
  * Parser diagnostic code values.
@@ -60,7 +110,7 @@ export type ComposerToken = {
  * Parsed slash command invocation.
  */
 export type CommandInvocation = {
-  name: CommandName;
+  name: string;
   args: string[];
   raw: string;
   start: number;
@@ -72,11 +122,12 @@ export type CommandInvocation = {
  */
 export type MentionRef = {
   id: string;
-  type: 'file';
+  type: MentionType;
   workspaceId: string;
-  absolutePath: string;
-  relativePath: string;
+  absolutePath?: string;
+  relativePath?: string;
   display: string;
+  payload?: Record<string, unknown>;
 };
 
 /**
@@ -108,12 +159,15 @@ export type ComposerParseResult = {
  * Command metadata used by the slash-command palette.
  */
 export type CommandDefinition = {
-  name: CommandName;
+  name: string;
   syntax: string;
   description: string;
+  category: CommandCategory;
+  handler: CommandHandler;
   minArgs: number;
   maxArgs: number;
   allowFlags: boolean;
+  source?: 'builtin' | 'skill';
 };
 
 /**
@@ -121,9 +175,11 @@ export type CommandDefinition = {
  */
 export type CommandSuggestion = {
   kind: 'command';
-  name: CommandName;
+  name: string;
   syntax: string;
   description: string;
+  category: CommandCategory;
+  handler: CommandHandler;
 };
 
 /**
@@ -188,6 +244,14 @@ export type ClaudeExecutionRequest = {
   threadId: string | null;
   parseResult: ComposerParseResult;
   modelOverride?: string;
+};
+
+/**
+ * Optional streaming callbacks for provider execution.
+ */
+export type ComposerExecutionCallbacks = {
+  onStreamChunk?: (chunk: string) => void;
+  onStreamEnd?: () => void;
 };
 
 /**

@@ -9,6 +9,7 @@ import { useWorkspaceStore, useGitStore, useThreadStore, useDeleteStore } from '
 import { useInitApp } from './hooks/useInitApp';
 import { FileList } from './components';
 import type { ComposerSuggestion } from './types';
+import { applyCommandSuggestion, applyMentionSuggestion } from './composer/inputTransforms';
 import { Button as BaseButton } from '@base-ui/react/button';
 import { Input as BaseInput } from '@base-ui/react/input';
 import {
@@ -31,6 +32,65 @@ function formatRelativeTime(timestamp: number): string {
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
   return `${days}d`;
+}
+
+const commandCategoryLabels: Record<string, string> = {
+  session: 'Session',
+  context: 'Context',
+  workflow: 'Workflow',
+  config: 'Config',
+  diagnostics: 'Diagnostics',
+  integration: 'Integration',
+  custom: 'Custom'
+};
+
+type SuggestionRenderRow =
+  | { kind: 'header'; key: string; label: string }
+  | { kind: 'item'; key: string; suggestion: ComposerSuggestion; index: number };
+
+function buildSuggestionRows(suggestions: ComposerSuggestion[]): SuggestionRenderRow[] {
+  const rows: SuggestionRenderRow[] = [];
+  let lastCommandCategory = '';
+  let mentionHeaderShown = false;
+
+  for (let index = 0; index < suggestions.length; index += 1) {
+    const suggestion = suggestions[index];
+    if (suggestion.kind === 'command') {
+      if (suggestion.category !== lastCommandCategory) {
+        lastCommandCategory = suggestion.category;
+        rows.push({
+          kind: 'header',
+          key: `category:${suggestion.category}`,
+          label: commandCategoryLabels[suggestion.category] ?? suggestion.category
+        });
+      }
+      rows.push({
+        kind: 'item',
+        key: `command:${suggestion.name}:${index}`,
+        suggestion,
+        index
+      });
+      continue;
+    }
+
+    if (!mentionHeaderShown) {
+      mentionHeaderShown = true;
+      rows.push({
+        kind: 'header',
+        key: 'category:mentions',
+        label: 'Mentions'
+      });
+    }
+
+    rows.push({
+      kind: 'item',
+      key: `mention:${suggestion.id}:${index}`,
+      suggestion,
+      index
+    });
+  }
+
+  return rows;
 }
 
 /**
@@ -59,8 +119,11 @@ export default function App() {
     tone: 'info' | 'error';
     text: string;
   } | null>(null);
+  const [streamOutput, setStreamOutput] = useState('');
   const composerInputRef = useRef<HTMLInputElement | null>(null);
   const suggestionRequestId = useRef(0);
+  const streamBufferRef = useRef('');
+  const executingThreadRef = useRef<string | null>(null);
 
   const stagedFiles = useMemo(
     () => gitFiles.filter((f) => f.staged),
@@ -75,6 +138,7 @@ export default function App() {
   const emptyTitle = changesView === 'staged' ? 'No staged changes' : 'No unstaged changes';
   const emptySubtitle =
     changesView === 'staged' ? 'Accept edits to stage them' : 'Working tree is clean';
+  const suggestionRows = useMemo(() => buildSuggestionRows(composerSuggestions), [composerSuggestions]);
 
   useEffect(() => {
     if (pendingDeletes.length === 0) return;
@@ -83,6 +147,25 @@ export default function App() {
     }, 250);
     return () => window.clearInterval(timer);
   }, [pendingDeletes.length]);
+
+  useEffect(() => {
+    const offChunk = window.openApp.composer.onStreamChunk((payload) => {
+      if (payload.threadId !== executingThreadRef.current) return;
+      streamBufferRef.current += payload.chunk;
+      setStreamOutput(streamBufferRef.current);
+    });
+
+    const offEnd = window.openApp.composer.onStreamEnd((payload) => {
+      if (payload.threadId !== executingThreadRef.current) return;
+      executingThreadRef.current = null;
+      setComposerBusy(false);
+    });
+
+    return () => {
+      offChunk();
+      offEnd();
+    };
+  }, []);
 
   const deleteThreadWithConfirm = async (threadId: string) => {
     const thread = threads.find((item) => item.id === threadId);
@@ -132,25 +215,6 @@ export default function App() {
     }
   };
 
-  const findMentionRange = (rawInput: string, cursor: number) => {
-    const prefix = rawInput.slice(0, cursor);
-    const match = prefix.match(/(?:^|\s)@([A-Za-z0-9_./-]*)$/);
-    if (!match || match.index === undefined) return null;
-    const localAt = match[0].lastIndexOf('@');
-    if (localAt < 0) return null;
-    const start = match.index + localAt;
-    return { start, end: cursor };
-  };
-
-  const findCommandRange = (rawInput: string) => {
-    const match = rawInput.match(/^\s*\/[^\s]*/);
-    if (!match || match.index === undefined) return null;
-    return {
-      start: match.index,
-      end: match.index + match[0].length
-    };
-  };
-
   const applyComposerSuggestion = (suggestion: ComposerSuggestion) => {
     if (!composerInputRef.current) return;
 
@@ -160,17 +224,13 @@ export default function App() {
     let nextCursor = cursor;
 
     if (suggestion.kind === 'command') {
-      const range = findCommandRange(composerValue) ?? { start: 0, end: 0 };
-      const trailing = composerValue.slice(range.end).trimStart();
-      const insert = `/${suggestion.name}`;
-      nextValue = `${composerValue.slice(0, range.start)}${insert}${trailing ? ` ${trailing}` : ' '}`;
-      nextCursor = range.start + insert.length + 1;
+      const transformed = applyCommandSuggestion(composerValue, { name: suggestion.name }, cursor);
+      nextValue = transformed.value;
+      nextCursor = transformed.cursor;
     } else {
-      const range = findMentionRange(composerValue, cursor);
-      if (!range) return;
-      const insert = `@${suggestion.value}`;
-      nextValue = `${composerValue.slice(0, range.start)}${insert}${composerValue.slice(range.end)}`;
-      nextCursor = range.start + insert.length;
+      const transformed = applyMentionSuggestion(composerValue, { value: suggestion.value }, cursor);
+      nextValue = transformed.value;
+      nextCursor = transformed.cursor;
       setSelectedMentionIds((previous) =>
         previous.includes(suggestion.id) ? previous : [...previous, suggestion.id]
       );
@@ -185,6 +245,24 @@ export default function App() {
     });
   };
 
+  const insertImageMention = (rawPath: string) => {
+    if (!workspace) return;
+    const normalizedPath = rawPath.replace(/\\/g, '/');
+    const normalizedWorkspace = workspace.path.replace(/\\/g, '/');
+    const value = normalizedPath.startsWith(`${normalizedWorkspace}/`)
+      ? normalizedPath.slice(normalizedWorkspace.length + 1)
+      : normalizedPath.split('/').pop() ?? normalizedPath;
+
+    const next = `${composerValue}${composerValue && !composerValue.endsWith(' ') ? ' ' : ''}@${value}`;
+    setComposerValue(next);
+    setComposerFeedback(null);
+    requestAnimationFrame(() => {
+      composerInputRef.current?.focus();
+      composerInputRef.current?.setSelectionRange(next.length, next.length);
+      void refreshComposerSuggestions(next, next.length);
+    });
+  };
+
   const submitComposer = async () => {
     if (!workspace || composerBusy) return;
     const rawInput = composerValue.trim();
@@ -192,6 +270,9 @@ export default function App() {
 
     setComposerBusy(true);
     setComposerFeedback(null);
+    setStreamOutput('');
+    streamBufferRef.current = '';
+    executingThreadRef.current = null;
 
     const payload = {
       rawInput,
@@ -212,6 +293,7 @@ export default function App() {
         return;
       }
 
+      executingThreadRef.current = payload.threadId;
       const result = await window.openApp.composer.execute(payload);
       if (!result.ok) {
         setComposerFeedback({
@@ -229,6 +311,8 @@ export default function App() {
         setComposerValue('');
         setSelectedMentionIds([]);
         closeComposerSuggestions();
+        setStreamOutput('');
+        streamBufferRef.current = '';
         setComposerFeedback({ tone: 'info', text: 'Composer cleared.' });
         return;
       }
@@ -236,9 +320,10 @@ export default function App() {
       setComposerValue('');
       setSelectedMentionIds([]);
       closeComposerSuggestions();
+      const output = streamBufferRef.current.trim() || (result.output ?? `Executed via ${result.provider}.`);
       setComposerFeedback({
         tone: 'info',
-        text: result.output ?? `Executed via ${result.provider}.`
+        text: output
       });
     } catch {
       setComposerFeedback({
@@ -246,7 +331,9 @@ export default function App() {
         text: 'Composer request failed. Check provider connection and try again.'
       });
     } finally {
-      setComposerBusy(false);
+      if (executingThreadRef.current === null) {
+        setComposerBusy(false);
+      }
     }
   };
 
@@ -381,7 +468,7 @@ export default function App() {
                     ref={composerInputRef}
                     placeholder={
                       workspace
-                        ? 'Ask Claude Code anything, @ to add files, / for commands'
+                        ? 'Ask anything, @ to add files, / for commands'
                         : 'Type your message. Select a project to send.'
                     }
                     value={composerValue}
@@ -397,6 +484,25 @@ export default function App() {
                         event.currentTarget.value,
                         event.currentTarget.selectionStart ?? event.currentTarget.value.length
                       );
+                    }}
+                    onPaste={(event) => {
+                      const file = [...event.clipboardData.files].find((entry) =>
+                        entry.type.startsWith('image/')
+                      );
+                      if (!file) return;
+                      event.preventDefault();
+                      const pathFromClipboard = (file as File & { path?: string }).path ?? file.name;
+                      insertImageMention(pathFromClipboard);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      const file = [...event.dataTransfer.files].find((entry) => entry.type.startsWith('image/'));
+                      if (!file) return;
+                      event.preventDefault();
+                      const droppedPath = (file as File & { path?: string }).path ?? file.name;
+                      insertImageMention(droppedPath);
                     }}
                     onKeyDown={async (event) => {
                       const isComposing = (event.nativeEvent as KeyboardEvent).isComposing;
@@ -449,27 +555,34 @@ export default function App() {
                 </div>
                 {composerSuggestions.length > 0 ? (
                   <div className="composer-suggestions" role="listbox" aria-label="Composer suggestions">
-                    {composerSuggestions.map((suggestion, index) => (
-                      <BaseButton
-                        key={suggestion.kind === 'command' ? suggestion.name : suggestion.id}
-                        className={index === activeComposerSuggestion ? 'composer-suggestion active' : 'composer-suggestion'}
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          applyComposerSuggestion(suggestion);
-                        }}
-                        type="button"
-                      >
-                        <span className="composer-suggestion-primary">
-                          {suggestion.kind === 'command' ? `/${suggestion.name}` : `@${suggestion.display}`}
-                        </span>
-                        <span className="composer-suggestion-secondary">
-                          {suggestion.kind === 'command' ? suggestion.description : suggestion.relativePath}
-                        </span>
-                      </BaseButton>
-                    ))}
+                    {suggestionRows.map((row) =>
+                      row.kind === 'header' ? (
+                        <div key={row.key} className="composer-suggestion-group">
+                          {row.label}
+                        </div>
+                      ) : (
+                        <BaseButton
+                          key={row.key}
+                          className={row.index === activeComposerSuggestion ? 'composer-suggestion active' : 'composer-suggestion'}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            applyComposerSuggestion(row.suggestion);
+                          }}
+                          type="button"
+                        >
+                          <span className="composer-suggestion-primary">
+                            {row.suggestion.kind === 'command' ? `/${row.suggestion.name}` : `@${row.suggestion.display}`}
+                          </span>
+                          <span className="composer-suggestion-secondary">
+                            {row.suggestion.kind === 'command' ? row.suggestion.description : row.suggestion.relativePath}
+                          </span>
+                        </BaseButton>
+                      )
+                    )}
                   </div>
                 ) : null}
               </div>
+              {streamOutput ? <pre className="composer-stream-output">{streamOutput}</pre> : null}
               {composerFeedback ? (
                 <div className={composerFeedback.tone === 'error' ? 'composer-feedback error' : 'composer-feedback'}>
                   {composerFeedback.text}

@@ -140,7 +140,43 @@ type CommandName =
   | 'plan'
   | 'status'
   | 'diff'
-  | 'test';
+  | 'test'
+  | 'resume'
+  | 'rewind'
+  | 'rename'
+  | 'export'
+  | 'copy'
+  | 'exit'
+  | 'context'
+  | 'memory'
+  | 'init'
+  | 'add-dir'
+  | 'todos'
+  | 'tasks'
+  | 'debug'
+  | 'config'
+  | 'permissions'
+  | 'cost'
+  | 'theme'
+  | 'vim'
+  | 'usage'
+  | 'stats'
+  | 'doctor'
+  | 'bug'
+  | 'mcp';
+
+type MentionType = 'file' | 'directory' | 'image' | 'mcp';
+
+type CommandHandler = 'local' | 'cli-proxy' | 'session' | 'custom';
+
+type CommandCategory =
+  | 'session'
+  | 'context'
+  | 'workflow'
+  | 'config'
+  | 'diagnostics'
+  | 'integration'
+  | 'custom';
 
 /**
  * Composer diagnostic code values.
@@ -159,7 +195,7 @@ type ComposerDiagnosticCode =
  * Command invocation structure.
  */
 type CommandInvocation = {
-  name: CommandName;
+  name: string;
   args: string[];
   raw: string;
   start: number;
@@ -171,11 +207,12 @@ type CommandInvocation = {
  */
 type MentionRef = {
   id: string;
-  type: 'file';
+  type: MentionType;
   workspaceId: string;
-  absolutePath: string;
-  relativePath: string;
+  absolutePath?: string;
+  relativePath?: string;
   display: string;
+  payload?: Record<string, unknown>;
 };
 
 /**
@@ -207,9 +244,11 @@ type ComposerParseResult = {
  */
 type CommandSuggestion = {
   kind: 'command';
-  name: CommandName;
+  name: string;
   syntax: string;
   description: string;
+  category: CommandCategory;
+  handler: CommandHandler;
 };
 
 /**
@@ -248,6 +287,15 @@ type ComposerExecutionResult = {
   action?: 'none' | 'clear';
   modelOverride?: string;
   diagnostics?: ComposerDiagnostic[];
+};
+
+type ComposerStreamChunk = {
+  threadId: string | null;
+  chunk: string;
+};
+
+type ComposerStreamEnd = {
+  threadId: string | null;
 };
 
 /**
@@ -326,6 +374,8 @@ declare global {
           selectedMentionIds?: string[];
           modelOverride?: string;
         }) => Promise<ComposerExecutionResult>;
+        onStreamChunk: (handler: (payload: ComposerStreamChunk) => void) => () => void;
+        onStreamEnd: (handler: (payload: ComposerStreamEnd) => void) => () => void;
       };
       events: {
         on: (channel: AppEvent, handler: () => void) => () => void;
