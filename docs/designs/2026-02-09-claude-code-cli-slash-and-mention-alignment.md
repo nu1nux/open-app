@@ -1,85 +1,85 @@
-# Claude Code CLI Slash-Command & @ Mention 对齐集成
+# Claude Code CLI Slash-Command and @ Mention Alignment Integration
 
 **Date:** 2026-02-09
 
 ## Context
 
-open-app 是一个基于 Electron 的桌面应用，已经通过 `execa` 调用本地 `claude` CLI 来执行 AI 交互。当前项目具备基础的 slash-command 系统（9 个命令：`/help`, `/clear`, `/model`, `/compact`, `/review`, `/plan`, `/status`, `/diff`, `/test`）和 `@` 文件引用功能（前缀+子串匹配）。
+open-app is an Electron-based desktop application that already invokes the local `claude` CLI via `execa` for AI interactions. The current project includes a basic slash-command system (9 commands: `/help`, `/clear`, `/model`, `/compact`, `/review`, `/plan`, `/status`, `/diff`, `/test`) and `@` file references (prefix + substring matching).
 
-目标是将 slash-command 和 `@` 引用功能**完全对齐真正的 Claude Code CLI**，包括补齐所有缺失命令、增强 `@` 引用类型、支持 Skills 自定义命令系统，并引入流式输出。
+The goal is to fully align slash-command and `@` reference capabilities with the real Claude Code CLI, including all missing built-in commands, richer `@` reference types, support for Skills/custom commands, and streaming output.
 
 ## Discussion
 
-### 架构方案选择
+### Architecture Options
 
-探讨了三种整体架构方案：
+We evaluated three end-to-end architecture approaches:
 
-1. **渐进扩展** — 在现有 registry/parser/mentions 架构上逐步扩展，改动最小但可能遇到可扩展性瓶颈。
-2. **插件化重构** — 将命令和 `@` 引用重构为插件化架构，每个类型是独立插件，更强可扩展性但需较大重构。
-3. **CLI 代理模式（最终选择）** — 命令注册和补全在 UI 层维护，实际执行大部分代理给本地安装的 `claude` CLI。最少的内部逻辑重复实现，行为与 CLI 天然一致。
+1. **Incremental extension**: Gradually extend the existing registry/parser/mentions architecture. This minimizes changes but may hit scalability limits.
+2. **Plugin-based refactor**: Refactor commands and `@` references into a plugin architecture, where each type is an independent plugin. This improves extensibility but requires larger refactoring.
+3. **CLI proxy model (selected)**: Keep command registration and completion in the UI layer, while proxying most execution to the locally installed `claude` CLI. This minimizes duplicated internal logic and keeps behavior naturally consistent with the CLI.
 
-**最终决策：** 采用 CLI 代理模式。理由是项目已有 `execa` 调用 `claude` CLI 的基础设施，代理到 CLI 可以最大限度地保持行为一致性，避免重复实现每个命令的内部逻辑。
+**Final decision:** adopt the CLI proxy model. Since the project already has `execa`-based integration with the `claude` CLI, proxying execution maximizes behavioral consistency and avoids reimplementing command internals.
 
-### 命令差距分析
+### Command Gap Analysis
 
-Claude Code CLI 拥有约 25+ 个内置命令，当前项目仅覆盖 9 个。差距集中在：
+Claude Code CLI provides roughly 25+ built-in commands, while the current project only covers 9. The gaps are concentrated in:
 
-- **会话管理：** 缺少 `/compact`, `/resume`, `/rewind`, `/rename`, `/export`, `/copy`, `/exit`
-- **上下文与记忆：** 缺少 `/context`, `/memory`, `/init`, `/add-dir`
-- **开发工作流：** 缺少 `/todos`, `/tasks`, `/debug`
-- **配置与设置：** 缺少 `/config`, `/permissions`, `/cost`, `/theme`, `/vim`, `/usage`, `/stats`
-- **诊断与系统：** 缺少 `/doctor`, `/bug`
-- **集成：** 缺少 `/mcp`
-- **自定义：** 缺少 Skills 系统
+- **Session management:** missing `/compact`, `/resume`, `/rewind`, `/rename`, `/export`, `/copy`, `/exit`
+- **Context and memory:** missing `/context`, `/memory`, `/init`, `/add-dir`
+- **Development workflow:** missing `/todos`, `/tasks`, `/debug`
+- **Configuration and settings:** missing `/config`, `/permissions`, `/cost`, `/theme`, `/vim`, `/usage`, `/stats`
+- **Diagnostics and system:** missing `/doctor`, `/bug`
+- **Integrations:** missing `/mcp`
+- **Customization:** missing the Skills system
 
-### @ 引用差距分析
+### @ Reference Gap Analysis
 
-| 类型 | 当前状态 | CLI 支持 |
-|------|---------|---------|
-| 文件引用 `@file` | 有（前缀+子串匹配） | 模糊匹配、respects .gitignore |
-| 目录引用 `@dir/` | 无 | 返回目录列表 |
-| 图片引用 `@image.png` | 无 | 多模态附件 |
-| MCP 资源 `@server:res` | 无 | 需 MCP 基础设施 |
-| 拖放/粘贴 | 无 | Electron 原生支持 |
+| Type | Current Status | CLI Support |
+|------|----------------|-------------|
+| File reference `@file` | Available (prefix + substring matching) | Fuzzy matching, respects `.gitignore` |
+| Directory reference `@dir/` | Not available | Returns directory list |
+| Image reference `@image.png` | Not available | Multimodal attachments |
+| MCP resource `@server:res` | Not available | Requires MCP infrastructure |
+| Drag-and-drop / paste | Not available | Native Electron support |
 
 ## Approach
 
-### 命令系统：三层处理模型
+### Command System: Three-Tier Processing Model
 
-将所有命令分为三层，按处理方式路由：
+All commands are grouped into three tiers and routed by handling strategy:
 
-| 层级 | 处理方式 | 命令 |
-|------|---------|------|
-| **Local** | Renderer 或 Main 内部直接处理 | `/help`, `/clear`, `/exit`, `/theme`, `/vim`, `/copy` |
-| **CLI Proxy** | 构建参数后代理给 `claude` CLI | `/compact`, `/review`, `/plan`, `/model`, `/cost`, `/doctor`, `/status`, `/config`, `/permissions`, `/memory`, `/init`, `/mcp`, `/context`, `/export`, `/bug` |
-| **Session** | 需要会话状态管理 | `/resume`, `/rewind`, `/rename`, `/todos`, `/tasks` |
+| Tier | Handling Strategy | Commands |
+|------|-------------------|----------|
+| **Local** | Handled directly in Renderer or Main | `/help`, `/clear`, `/exit`, `/theme`, `/vim`, `/copy` |
+| **CLI Proxy** | Build arguments and proxy to `claude` CLI | `/compact`, `/review`, `/plan`, `/model`, `/cost`, `/doctor`, `/status`, `/config`, `/permissions`, `/memory`, `/init`, `/mcp`, `/context`, `/export`, `/bug` |
+| **Session** | Requires session state management | `/resume`, `/rewind`, `/rename`, `/todos`, `/tasks` |
 
-### @ 引用系统：Provider 架构
+### @ Reference System: Provider Architecture
 
-将当前 `mentions.ts` 的单一文件索引重构为 **MentionProvider 接口**，每种引用类型实现一个 provider：
+Refactor the current single-file index in `mentions.ts` into a **MentionProvider interface**, where each reference type is implemented as a dedicated provider:
 
-- **FileMentionProvider** — 增强模糊匹配，respects .gitignore
-- **DirMentionProvider** — 目录引用，返回目录结构
-- **ImageMentionProvider** — 图片附件，支持拖放和粘贴
-- **McpMentionProvider** — MCP 资源引用（依赖 MCP 基础设施）
+- **FileMentionProvider**: enhanced fuzzy matching, respects `.gitignore`
+- **DirMentionProvider**: directory references, returns directory structure
+- **ImageMentionProvider**: image attachments, supports drag-and-drop and paste
+- **McpMentionProvider**: MCP resource references (depends on MCP infrastructure)
 
-### Skills 自定义命令系统
+### Skills Custom Command System
 
-对齐 Claude Code 的 Skills/Custom Commands，扫描以下路径动态加载：
+Align with Claude Code Skills/custom commands by scanning and dynamically loading from:
 
-1. `~/.claude/skills/<name>/SKILL.md` — 全局用户自定义
-2. `.claude/skills/<name>/SKILL.md` — 项目级自定义
-3. `.claude/commands/<name>.md` — 兼容旧格式
+1. `~/.claude/skills/<name>/SKILL.md` for global user-defined skills
+2. `.claude/skills/<name>/SKILL.md` for project-level skills
+3. `.claude/commands/<name>.md` for legacy compatibility
 
-### 流式输出
+### Streaming Output
 
-对 AI 交互类命令（`/compact`, `/review` 等）引入 streaming 支持，通过 IPC 事件逐块推送到 Renderer 实时渲染。
+Introduce streaming support for AI interaction commands (for example `/compact`, `/review`) and push chunked output to Renderer in real time through IPC events.
 
 ## Architecture
 
-### Registry 扩展
+### Registry Extensions
 
-在现有 `registry.ts` 的命令定义结构上新增字段：
+Add fields to the existing command definition in `registry.ts`:
 
 ```ts
 interface CommandDefinition {
@@ -94,124 +94,124 @@ interface CommandDefinition {
 }
 ```
 
-新增约 20 个命令注册：
+Register approximately 20 additional commands:
 
-- **会话管理：** `/compact`, `/resume`, `/rewind`, `/rename`, `/export`, `/copy`, `/exit`
-- **上下文与记忆：** `/context`, `/memory`, `/init`, `/add-dir`
-- **开发工作流：** `/todos`, `/tasks`, `/debug`
-- **配置与设置：** `/config`, `/permissions`, `/cost`, `/theme`, `/vim`, `/usage`, `/stats`
-- **诊断与系统：** `/doctor`, `/bug`
-- **集成：** `/mcp`
+- **Session management:** `/compact`, `/resume`, `/rewind`, `/rename`, `/export`, `/copy`, `/exit`
+- **Context and memory:** `/context`, `/memory`, `/init`, `/add-dir`
+- **Development workflow:** `/todos`, `/tasks`, `/debug`
+- **Configuration and settings:** `/config`, `/permissions`, `/cost`, `/theme`, `/vim`, `/usage`, `/stats`
+- **Diagnostics and system:** `/doctor`, `/bug`
+- **Integrations:** `/mcp`
 
-### 下拉列表 UI
+### Dropdown UI
 
-- 输入 `/` 时展示所有命令，按 `category` 分组显示（带分组标题）
-- 继续输入则过滤匹配
-- 每个命令项显示：名称 + 简短描述
-- 需要参数的命令，选中后自动补全到 `/command ` 留光标等待输入
-- Skills 自定义命令标记为 "Custom" 类别
+- Show all commands when the user types `/`, grouped by `category` with group headers.
+- Continue filtering as the user types.
+- Show each command item as: command name + short description.
+- For commands that require arguments, auto-complete to `/command ` and leave the cursor ready for input.
+- Tag Skills-based custom commands under the "Custom" category.
 
-### @ 引用 Provider 架构
+### @ Reference Provider Architecture
 
 ```
-用户输入 @xxx
+User input: @xxx
     ↓
-detectSuggestionContext() 判断类型
+detectSuggestionContext() identifies the type
     ↓
-┌───────────────────┬────────────────────┬─────────────────────┬────────────────────┐
+┌────────────────────┬────────────────────┬──────────────────────┬────────────────────┐
 │ FileMentionProvider│ DirMentionProvider │ ImageMentionProvider │ McpMentionProvider │
-│ (增强模糊匹配)     │ (目录列表)         │ (图片附件)           │ (MCP 资源)         │
-└───────────────────┴────────────────────┴─────────────────────┴────────────────────┘
+│ (enhanced fuzzy)   │ (directory list)   │ (image attachment)   │ (MCP resource)     │
+└────────────────────┴────────────────────┴──────────────────────┴────────────────────┘
     ↓
-合并结果，按相关性排序，返回补全列表
+Merge results, rank by relevance, return completion list
 ```
 
-**文件引用增强：**
-- 路径片段模糊匹配（输入 `@Button` 匹配 `src/components/Button.tsx`）
-- 索引时自动排除 `.gitignore` 中的路径（替代当前硬编码排除列表）
+**File reference enhancements:**
+- Fuzzy matching on path fragments (for example, `@Button` matches `src/components/Button.tsx`)
+- Automatically exclude paths in `.gitignore` during indexing (replaces the current hardcoded exclusion list)
 
-**目录引用：**
-- 以 `/` 结尾识别为目录
-- 补全列表中目录带文件夹图标
-- 解析时返回目录树结构（限制 2 层深度）
+**Directory references:**
+- Detect directory references by trailing `/`
+- Display folder icon for directories in completion list
+- Return directory tree structure during resolution (depth limited to 2 levels)
 
-**图片引用：**
-- 自动识别图片扩展名（`.png`, `.jpg`, `.gif`, `.svg`, `.webp`）
-- 传给 Claude API 时作为 `image` content block
-- 支持 Electron 原生拖放和剪贴板粘贴
+**Image references:**
+- Auto-detect image extensions (`.png`, `.jpg`, `.gif`, `.svg`, `.webp`)
+- Send as `image` content blocks to the Claude API
+- Support native Electron drag-and-drop and clipboard paste
 
-**MCP 资源引用：**
-- 语法 `@server-name:resource-uri`
-- 依赖 `/mcp` 命令建立连接后可用
+**MCP resource references:**
+- Syntax: `@server-name:resource-uri`
+- Available only after connection is established via `/mcp`
 
-### CLI 代理执行层
+### CLI Proxy Execution Layer
 
 ```
-用户输入 /compact focus on auth
+User input: /compact focus on auth
     ↓
-registry 查到 handler: 'cli-proxy'
+Registry resolves handler: 'cli-proxy'
     ↓
-构建 CLI 调用参数
+Build CLI invocation arguments
     ↓
 execa('claude', ['-p', '/compact focus on auth'])
     ↓
-streaming: stdout 逐块推送 → IPC send → Renderer 实时渲染
+Streaming: stdout chunks -> IPC send -> real-time Renderer rendering
     ↓
-完成: 解析输出 → ComposerExecutionResult
+Completion: parse output -> ComposerExecutionResult
 ```
 
-不同命令类型的 CLI 调用方式：
+CLI invocation strategy by command type:
 
-| 命令类型 | CLI 调用方式 |
-|---------|-------------|
-| AI 交互类（`/compact`, `/review`, `/plan`） | `claude -p "/compact ..."` + streaming |
-| 查询类（`/cost`, `/status`, `/doctor`） | `claude -p "/cost"` 解析 JSON 输出 |
-| 设置类（`/config`, `/permissions`） | Electron 内构建 UI + `claude config` 子命令 |
-| 文件操作类（`/memory`, `/init`） | 调用 CLI 或直接操作 CLAUDE.md 文件 |
+| Command Type | CLI Invocation Strategy |
+|--------------|-------------------------|
+| AI interaction commands (`/compact`, `/review`, `/plan`) | `claude -p "/compact ..."` + streaming |
+| Query commands (`/cost`, `/status`, `/doctor`) | `claude -p "/cost"` and parse JSON output |
+| Settings commands (`/config`, `/permissions`) | Build UI in Electron + `claude config` subcommands |
+| File operation commands (`/memory`, `/init`) | Use CLI or modify `CLAUDE.md` directly |
 
-### Streaming IPC 协议
+### Streaming IPC Protocol
 
-新增 IPC 事件频道：
+Add IPC event channels:
 
-- `composer:stream-chunk` — 逐块推送 AI 输出
-- `composer:stream-end` — 流式输出结束
+- `composer:stream-chunk`: push AI output chunks incrementally
+- `composer:stream-end`: indicate stream completion
 
-Renderer 端使用 `events.on('composer:stream-chunk', handler)` 订阅，实时追加渲染 markdown。
+On the Renderer side, subscribe with `events.on('composer:stream-chunk', handler)` and append markdown in real time.
 
-### Skills 系统
+### Skills System
 
 ```
-启动时 / workspace 切换时
+At app startup or workspace switch
     ↓
-扫描 Skills 路径
+Scan Skills paths
     ↓
-解析 YAML frontmatter（获取元数据）
+Parse YAML frontmatter (metadata extraction)
     ↓
-动态注册到 registry（category: 'custom'）
+Dynamically register into registry (category: 'custom')
     ↓
-用户选择执行时：
-    SKILL.md 内容 + $ARGUMENTS 替换 → 发送给 claude CLI
+When user executes:
+    SKILL.md content + $ARGUMENTS substitution -> send to claude CLI
 ```
 
-支持的 SKILL.md 特性：
-- `$ARGUMENTS` — 替换为用户传入的参数
-- `$ARGUMENTS[N]` / `$N` — 位置参数
-- `` !`command` `` — Shell 命令预处理
-- `context: fork` — 隔离子 agent 上下文
-- `allowed-tools` — 限制可用工具
+Supported `SKILL.md` capabilities:
+- `$ARGUMENTS`: replaced with user-supplied arguments
+- `$ARGUMENTS[N]` / `$N`: positional arguments
+- `` !`command` ``: shell command preprocessing
+- `context: fork`: isolated child-agent context
+- `allowed-tools`: tool access restrictions
 
-### 文件变更清单
+### File Change List
 
-| 文件 | 变更类型 | 说明 |
-|------|---------|------|
-| `src/main/composer/registry.ts` | 修改 | 扩展命令定义，新增 ~20 个命令，增加 category/handler 字段 |
-| `src/main/composer/parser.ts` | 修改 | 增强 @ 引用解析（目录、图片、MCP） |
-| `src/main/composer/mentions.ts` | 重构 | 拆分为 MentionProvider 接口 |
-| `src/main/composer/index.ts` | 修改 | 适配新的 mention providers |
-| `src/main/providers/claude.ts` | 修改 | 新增 streaming 模式、CLI proxy 路由 |
-| `src/main/providers/index.ts` | 修改 | 新增命令路由逻辑 |
-| `src/shared/composer.ts` | 修改 | 新增类型定义（category, handler, mention types） |
-| `src/preload/index.ts` | 修改 | 暴露新的 IPC 频道（stream, skills） |
-| `src/renderer/App.tsx` | 修改 | 下拉列表分组 UI、流式渲染、拖放/粘贴 |
-| `src/main/skills/` | **新增** | Skills 发现、解析、注册模块 |
-| `src/main/ipc/index.ts` | 修改 | 新增 stream 和 skills 相关 handlers |
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `src/main/composer/registry.ts` | Modified | Extend command definitions, add ~20 commands, add `category`/`handler` fields |
+| `src/main/composer/parser.ts` | Modified | Enhance `@` reference parsing (directory, image, MCP) |
+| `src/main/composer/mentions.ts` | Refactored | Split into `MentionProvider` interface |
+| `src/main/composer/index.ts` | Modified | Adapt to new mention providers |
+| `src/main/providers/claude.ts` | Modified | Add streaming mode and CLI proxy routing |
+| `src/main/providers/index.ts` | Modified | Add command routing logic |
+| `src/shared/composer.ts` | Modified | Add type definitions (`category`, `handler`, mention types) |
+| `src/preload/index.ts` | Modified | Expose new IPC channels (stream, skills) |
+| `src/renderer/App.tsx` | Modified | Grouped dropdown UI, streaming render, drag-and-drop/paste |
+| `src/main/skills/` | **Added** | Skills discovery, parsing, registration module |
+| `src/main/ipc/index.ts` | Modified | Add stream- and skills-related handlers |

@@ -13,7 +13,7 @@ import { useWorkspaceStore, useGitStore, useThreadStore, useDeleteStore } from '
  */
 export function useInitApp() {
   const { fetchCurrent, fetchList, current } = useWorkspaceStore();
-  const { fetchSummary, fetchFiles } = useGitStore();
+  const { fetchSummary, fetchFileLists } = useGitStore();
   const { fetchThreads } = useThreadStore();
   const { fetchPending } = useDeleteStore();
 
@@ -29,10 +29,10 @@ export function useInitApp() {
   useEffect(() => {
     if (!current) return;
     void (async () => {
-      await Promise.all([fetchSummary(), fetchFiles(), fetchThreads(current.id)]);
+      await Promise.all([fetchSummary(), fetchFileLists(), fetchThreads(current.id)]);
       await fetchPending();
     })();
-  }, [current, fetchSummary, fetchFiles, fetchThreads, fetchPending]);
+  }, [current, fetchSummary, fetchFileLists, fetchThreads, fetchPending]);
 
   // Subscribe to IPC events
   useEffect(() => {
@@ -42,8 +42,8 @@ export function useInitApp() {
     });
 
     const unsubGit = window.openApp.events.on('git:changed', () => {
-      fetchSummary();
-      fetchFiles();
+      void fetchSummary();
+      void fetchFileLists();
     });
 
     const unsubDelete = window.openApp.events.on('delete:changed', () => {
@@ -55,5 +55,5 @@ export function useInitApp() {
       unsubGit();
       unsubDelete();
     };
-  }, [fetchCurrent, fetchList, fetchSummary, fetchFiles, fetchPending]);
+  }, [fetchCurrent, fetchList, fetchSummary, fetchFileLists, fetchPending]);
 }

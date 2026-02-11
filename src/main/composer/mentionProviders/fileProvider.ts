@@ -6,12 +6,14 @@ import type { MentionRef, MentionSuggestion } from '../../../shared/composer';
 import type { MentionProvider, MentionProviderInput } from './types';
 
 type WorkspaceFileIndexCache = {
+  workspacePath: string;
   entries: MentionSuggestion[];
   builtAt: number;
 };
 
 const cache = new Map<string, WorkspaceFileIndexCache>();
-const CACHE_TTL_MS = 10000;
+const inFlightIndexBuilds = new Map<string, Promise<MentionSuggestion[]>>();
+const CACHE_TTL_MS = 60000;
 const MAX_INDEX_FILES = 8000;
 const hardIgnoredDirectories = new Set(['.git', 'node_modules']);
 
@@ -79,27 +81,46 @@ async function buildFileIndex(workspaceId: string, workspacePath: string): Promi
     }
   }
 
-  cache.set(workspaceId, { entries, builtAt: Date.now() });
+  cache.set(workspaceId, { workspacePath, entries, builtAt: Date.now() });
   return entries;
 }
 
 async function getFileIndex(workspaceId: string, workspacePath: string): Promise<MentionSuggestion[]> {
   const cached = cache.get(workspaceId);
-  if (cached && Date.now() - cached.builtAt < CACHE_TTL_MS) {
+  if (cached && cached.workspacePath === workspacePath && Date.now() - cached.builtAt < CACHE_TTL_MS) {
     return cached.entries;
   }
-  return buildFileIndex(workspaceId, workspacePath);
+
+  const cacheKey = `${workspaceId}:${workspacePath}`;
+  const existingBuild = inFlightIndexBuilds.get(cacheKey);
+  if (existingBuild) {
+    return existingBuild;
+  }
+
+  const buildPromise = buildFileIndex(workspaceId, workspacePath).finally(() => {
+    inFlightIndexBuilds.delete(cacheKey);
+  });
+  inFlightIndexBuilds.set(cacheKey, buildPromise);
+  return buildPromise;
 }
 
 function rankSuggestions(entries: MentionSuggestion[], query: string): MentionSuggestion[] {
   if (!query) return entries.slice(0, 20);
   const normalized = query.toLowerCase();
-  const startsWith = entries.filter((entry) => entry.relativePath.toLowerCase().startsWith(normalized));
-  const includes = entries.filter(
-    (entry) =>
-      !entry.relativePath.toLowerCase().startsWith(normalized) &&
-      entry.relativePath.toLowerCase().includes(normalized)
-  );
+  const startsWith: MentionSuggestion[] = [];
+  const includes: MentionSuggestion[] = [];
+
+  for (const entry of entries) {
+    const relativeLower = entry.relativePath.toLowerCase();
+    if (relativeLower.startsWith(normalized)) {
+      startsWith.push(entry);
+      continue;
+    }
+    if (relativeLower.includes(normalized)) {
+      includes.push(entry);
+    }
+  }
+
   return [...startsWith, ...includes].slice(0, 20);
 }
 

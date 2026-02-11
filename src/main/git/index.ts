@@ -35,6 +35,14 @@ export type GitFileStatus = {
 };
 
 /**
+ * Grouped staged/unstaged file lists.
+ */
+export type GitFileLists = {
+  staged: GitFileStatus[];
+  unstaged: GitFileStatus[];
+};
+
+/**
  * Executes a git command in the specified directory.
  * @param {string[]} args - Arguments to pass to the git command
  * @param {string} cwd - Working directory for the git command
@@ -148,4 +156,41 @@ export async function getGitFileStatuses() {
     });
 
   return { available: true, files };
+}
+
+/**
+ * Splits a file status array into staged and unstaged buckets.
+ * Files that are both staged and unstaged will appear in both lists.
+ * @param {GitFileStatus[]} files - Parsed git file statuses
+ * @returns {GitFileLists} Grouped file lists
+ */
+export function groupGitFilesByStage(files: GitFileStatus[]): GitFileLists {
+  return {
+    staged: files.filter((file) => file.staged),
+    unstaged: files.filter((file) => file.unstaged)
+  };
+}
+
+/**
+ * Gets grouped staged and unstaged file lists for the current workspace.
+ * @returns {Promise<{available: boolean, reason?: string, staged: GitFileStatus[], unstaged: GitFileStatus[]}>}
+ * Grouped file status information
+ */
+export async function getGitFileLists() {
+  const result = await getGitFileStatuses();
+  if (!result.available) {
+    return {
+      available: false,
+      reason: result.reason,
+      staged: [] as GitFileStatus[],
+      unstaged: [] as GitFileStatus[]
+    };
+  }
+
+  const grouped = groupGitFilesByStage(result.files);
+  return {
+    available: true,
+    staged: grouped.staged,
+    unstaged: grouped.unstaged
+  };
 }

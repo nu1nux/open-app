@@ -1,26 +1,41 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Dirent } from 'node:fs';
+import ignore from 'ignore';
 import type { MentionRef, MentionSuggestion } from '../../../shared/composer';
 import type { MentionProvider, MentionProviderInput } from './types';
 
 type WorkspaceDirectoryIndexCache = {
+  workspacePath: string;
   entries: MentionSuggestion[];
   builtAt: number;
 };
 
 const MAX_INDEX_DIRECTORIES = 4000;
-const CACHE_TTL_MS = 10000;
+const CACHE_TTL_MS = 60000;
 const hardIgnoredDirectories = new Set(['.git', 'node_modules']);
 const cache = new Map<string, WorkspaceDirectoryIndexCache>();
+const inFlightIndexBuilds = new Map<string, Promise<MentionSuggestion[]>>();
 
 function toPosixPath(value: string): string {
   return value.split(path.sep).join('/');
 }
 
+async function createIgnoreMatcher(workspacePath: string) {
+  const matcher = ignore();
+  try {
+    const gitignoreText = await fs.readFile(path.join(workspacePath, '.gitignore'), 'utf8');
+    matcher.add(gitignoreText);
+  } catch {
+    // No .gitignore available.
+  }
+  return matcher;
+}
+
 async function buildDirectoryIndex(workspaceId: string, workspacePath: string): Promise<MentionSuggestion[]> {
   const entries: MentionSuggestion[] = [];
   const stack: string[] = [workspacePath];
+  const matcher = await createIgnoreMatcher(workspacePath);
 
   while (stack.length > 0 && entries.length < MAX_INDEX_DIRECTORIES) {
     const current = stack.pop();
@@ -41,6 +56,7 @@ async function buildDirectoryIndex(workspaceId: string, workspacePath: string): 
       const relativeBase = toPosixPath(path.relative(workspacePath, absolutePath));
       if (!relativeBase) continue;
       const relativePath = `${relativeBase}/`;
+      if (matcher.ignores(relativeBase) || matcher.ignores(relativePath)) continue;
 
       entries.push({
         kind: 'mention',
@@ -56,27 +72,46 @@ async function buildDirectoryIndex(workspaceId: string, workspacePath: string): 
     }
   }
 
-  cache.set(workspaceId, { entries, builtAt: Date.now() });
+  cache.set(workspaceId, { workspacePath, entries, builtAt: Date.now() });
   return entries;
 }
 
 async function getDirectoryIndex(workspaceId: string, workspacePath: string): Promise<MentionSuggestion[]> {
   const cached = cache.get(workspaceId);
-  if (cached && Date.now() - cached.builtAt < CACHE_TTL_MS) {
+  if (cached && cached.workspacePath === workspacePath && Date.now() - cached.builtAt < CACHE_TTL_MS) {
     return cached.entries;
   }
-  return buildDirectoryIndex(workspaceId, workspacePath);
+
+  const cacheKey = `${workspaceId}:${workspacePath}`;
+  const existingBuild = inFlightIndexBuilds.get(cacheKey);
+  if (existingBuild) {
+    return existingBuild;
+  }
+
+  const buildPromise = buildDirectoryIndex(workspaceId, workspacePath).finally(() => {
+    inFlightIndexBuilds.delete(cacheKey);
+  });
+  inFlightIndexBuilds.set(cacheKey, buildPromise);
+  return buildPromise;
 }
 
 function rankSuggestions(entries: MentionSuggestion[], query: string): MentionSuggestion[] {
   if (!query) return entries.slice(0, 20);
   const normalized = query.toLowerCase();
-  const startsWith = entries.filter((entry) => entry.relativePath.toLowerCase().startsWith(normalized));
-  const includes = entries.filter(
-    (entry) =>
-      !entry.relativePath.toLowerCase().startsWith(normalized) &&
-      entry.relativePath.toLowerCase().includes(normalized)
-  );
+  const startsWith: MentionSuggestion[] = [];
+  const includes: MentionSuggestion[] = [];
+
+  for (const entry of entries) {
+    const relativeLower = entry.relativePath.toLowerCase();
+    if (relativeLower.startsWith(normalized)) {
+      startsWith.push(entry);
+      continue;
+    }
+    if (relativeLower.includes(normalized)) {
+      includes.push(entry);
+    }
+  }
+
   return [...startsWith, ...includes].slice(0, 20);
 }
 

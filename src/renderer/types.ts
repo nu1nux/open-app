@@ -24,6 +24,16 @@ export type GitFileStatus = {
 };
 
 /**
+ * Grouped staged/unstaged git file status payload.
+ */
+export type GitFileListsResult = {
+  available: boolean;
+  reason?: string;
+  staged: GitFileStatus[];
+  unstaged: GitFileStatus[];
+};
+
+/**
  * Summary information about a git repository.
  */
 export type GitSummary = {

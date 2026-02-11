@@ -103,7 +103,7 @@ export default function App() {
   useInitApp();
 
   const { current: workspace, list: workspaces, pick, setCurrent } = useWorkspaceStore();
-  const { files: gitFiles } = useGitStore();
+  const { stagedFiles, unstagedFiles, gitAvailable, gitReason } = useGitStore();
   const { threads, activeId: activeThread, setActive: setActiveThread, createThread } = useThreadStore();
   const { pending: pendingDeletes, requestThreadDelete, requestWorkspaceDelete, undoDelete } = useDeleteStore();
 
@@ -125,19 +125,17 @@ export default function App() {
   const streamBufferRef = useRef('');
   const executingThreadRef = useRef<string | null>(null);
 
-  const stagedFiles = useMemo(
-    () => gitFiles.filter((f) => f.staged),
-    [gitFiles]
-  );
-  const unstagedFiles = useMemo(
-    () => gitFiles.filter((f) => f.unstaged),
-    [gitFiles]
-  );
-
   const currentFiles = changesView === 'staged' ? stagedFiles : unstagedFiles;
-  const emptyTitle = changesView === 'staged' ? 'No staged changes' : 'No unstaged changes';
-  const emptySubtitle =
-    changesView === 'staged' ? 'Accept edits to stage them' : 'Working tree is clean';
+  const emptyTitle = gitAvailable
+    ? changesView === 'staged'
+      ? 'No staged changes'
+      : 'No unstaged changes'
+    : 'Git status unavailable';
+  const emptySubtitle = gitAvailable
+    ? changesView === 'staged'
+      ? 'Accept edits to stage them'
+      : 'Working tree is clean'
+    : (gitReason ?? 'Select a workspace that is a git repository.');
   const suggestionRows = useMemo(() => buildSuggestionRows(composerSuggestions), [composerSuggestions]);
 
   useEffect(() => {

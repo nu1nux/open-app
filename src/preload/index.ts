@@ -59,7 +59,8 @@ contextBridge.exposeInMainWorld('openApp', {
   git: {
     summary: () => ipcRenderer.invoke('git:summary'),
     status: () => ipcRenderer.invoke('git:status'),
-    files: () => ipcRenderer.invoke('git:files')
+    files: () => ipcRenderer.invoke('git:files'),
+    fileLists: () => ipcRenderer.invoke('git:fileLists')
   },
   diff: {
     current: () => ipcRenderer.invoke('diff:current'),

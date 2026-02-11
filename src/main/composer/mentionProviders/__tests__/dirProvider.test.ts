@@ -49,4 +49,56 @@ describe('dirMentionProvider', () => {
     expect(firstCallCount).toBeGreaterThan(0);
     expect(secondCallCount).toBe(firstCallCount);
   });
+
+  it('deduplicates concurrent index builds for the same workspace', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'open-app-dir-provider-'));
+    workspaces.push(workspacePath);
+
+    await writeFile(workspacePath, 'src/components/Button.tsx', 'export const Button = () => null;\n');
+    await writeFile(workspacePath, 'src/main.ts', 'export const value = 1;\n');
+
+    const readdirSpy = vi.spyOn(fs, 'readdir');
+
+    await dirMentionProvider.suggest({
+      workspaceId: 'workspace-baseline',
+      workspacePath,
+      query: 'src'
+    });
+    const baselineCallCount = readdirSpy.mock.calls.length;
+
+    readdirSpy.mockClear();
+    await Promise.all([
+      dirMentionProvider.suggest({
+        workspaceId: 'workspace-concurrent',
+        workspacePath,
+        query: 'src'
+      }),
+      dirMentionProvider.suggest({
+        workspaceId: 'workspace-concurrent',
+        workspacePath,
+        query: 'src'
+      })
+    ]);
+    const concurrentCallCount = readdirSpy.mock.calls.length;
+
+    expect(baselineCallCount).toBeGreaterThan(0);
+    expect(concurrentCallCount).toBe(baselineCallCount);
+  });
+
+  it('skips directories ignored by .gitignore', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'open-app-dir-provider-'));
+    workspaces.push(workspacePath);
+
+    await writeFile(workspacePath, '.gitignore', 'dist/\n');
+    await writeFile(workspacePath, 'dist/generated/index.js', 'export const generated = true;\n');
+    await writeFile(workspacePath, 'src/main.ts', 'export const main = true;\n');
+
+    const suggestions = await dirMentionProvider.suggest({
+      workspaceId: 'workspace-gitignore',
+      workspacePath,
+      query: 'dist'
+    });
+
+    expect(suggestions.some((entry) => entry.relativePath === 'dist/')).toBe(false);
+  });
 });

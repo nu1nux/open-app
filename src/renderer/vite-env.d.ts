@@ -65,6 +65,16 @@ type GitFilesResult = {
 };
 
 /**
+ * Grouped staged/unstaged git file status payload.
+ */
+type GitFileListsResult = {
+  available: boolean;
+  reason?: string;
+  staged: GitFileStatus[];
+  unstaged: GitFileStatus[];
+};
+
+/**
  * Result of a diff operation.
  */
 type DiffResult = {
@@ -335,6 +345,7 @@ declare global {
         summary: () => Promise<GitSummary>;
         status: () => Promise<GitSummary>;
         files: () => Promise<GitFilesResult>;
+        fileLists: () => Promise<GitFileListsResult>;
       };
       diff: {
         current: () => Promise<DiffResult>;

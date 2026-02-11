@@ -20,7 +20,7 @@ import {
   restoreIgnoredWorkspace,
   setCurrentWorkspace
 } from '../workspace';
-import { getGitSummary, getGitStatus, getGitFileStatuses } from '../git';
+import { getGitSummary, getGitStatus, getGitFileStatuses, getGitFileLists } from '../git';
 import { getDiff, getDiffForFile } from '../diff';
 import { emitAppEvent, onAppEvent, type AppEvent } from '../events';
 import { startWatchers, stopWatchers } from '../watchers';
@@ -173,6 +173,10 @@ export function registerIpc() {
 
   ipcMain.handle('git:files', async () => {
     return getGitFileStatuses();
+  });
+
+  ipcMain.handle('git:fileLists', async () => {
+    return getGitFileLists();
   });
 
   ipcMain.handle('diff:current', async () => {
